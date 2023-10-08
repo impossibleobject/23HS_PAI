@@ -23,7 +23,7 @@ class Model(object):
     without changing their signatures, but are allowed to create additional methods.
     """
 
-    def __init__(self):
+    def __init__(self, kernel=Product(ConstantKernel(),Matern())):
         """
         Initialize your model here.
         We already provide a random number generator for reproducibility.
@@ -31,6 +31,7 @@ class Model(object):
         self.rng = np.random.default_rng(seed=0)
 
         # TODO: Add custom initialization for your model here if necessary
+        self.regressor = GaussianProcessRegressor(kernel=kernel)
 
     def make_predictions(self, test_x_2D: np.ndarray, test_x_AREA: np.ndarray) -> typing.Tuple[np.ndarray, np.ndarray, np.ndarray]:
         """
@@ -43,11 +44,14 @@ class Model(object):
         """
 
         # TODO: Use your GP to estimate the posterior mean and stddev for each city_area here
-        gp_mean = np.zeros(test_x_2D.shape[0], dtype=float)
-        gp_std = np.zeros(test_x_2D.shape[0], dtype=float)
+        #gp_mean = np.zeros(test_x_2D.shape[0], dtype=float)
+        #gp_std = np.zeros(test_x_2D.shape[0], dtype=float)
 
-        # TODO: Use the GP posterior to form your predictions here
-        predictions = gp_mean
+        # TODO: Use the GP posterior to form your predictions here]
+        gp_mean, gp_std = self.regressor.predict(test_x_2D, return_std=True)
+        #print(f"predictions: {predictions}")
+        predictions = self.regressor.sample_y(test_x_2D).flat
+        #print(predictions)
 
         return predictions, gp_mean, gp_std
 
@@ -57,9 +61,10 @@ class Model(object):
         :param train_x_2D: Training features as a 2d NumPy float array of shape (NUM_SAMPLES, 2)
         :param train_y: Training pollution concentrations as a 1d NumPy float array of shape (NUM_SAMPLES,)
         """
-
+        #print("fitting now Simon asshole")
         # TODO: Fit your model here
-        pass
+        #print(f"train X: {train_x_2D}")
+        self.regressor = self.regressor.fit(train_x_2D, train_y)
 
 # You don't have to change this function
 def cost_function(ground_truth: np.ndarray, predictions: np.ndarray, AREA_idxs: np.ndarray) -> float:
