@@ -23,7 +23,7 @@ class Model(object):
 	without changing their signatures, but are allowed to create additional methods.
 	"""
 
-	def __init__(self, kernel=Product(ConstantKernel(),Matern())):
+	def __init__(self, kernel=Product(ConstantKernel(),RBF())):
 		"""
 		Initialize your model here.
 		We already provide a random number generator for reproducibility.
@@ -50,7 +50,7 @@ class Model(object):
 		# TODO: Use the GP posterior to form your predictions here]
 		gp_mean, gp_std = self.regressor.predict(test_x_2D, return_std=True)
 		#print(f"predictions: {predictions}")
-		predictions = self.regressor.sample_y(test_x_2D).flat
+		predictions = np.maximum(gp_mean, 0)
 		#print(predictions)
 
 		return predictions, gp_mean, gp_std
