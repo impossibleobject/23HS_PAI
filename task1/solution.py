@@ -50,7 +50,7 @@ class Model(object):
 		# TODO: Use the GP posterior to form your predictions here]
 		gp_mean, gp_std = self.regressor.predict(test_x_2D, return_std=True)
 		predictions = np.maximum(gp_mean, 0)
-		predictions = np.array([x + 17 if area else x for area, x in zip(test_x_AREA, predictions)])
+		predictions = np.array([x + 4 if area else x for area, x in zip(test_x_AREA, predictions)])
 		print(f"predictions: {predictions}")
 
 
@@ -64,7 +64,7 @@ class Model(object):
 		"""
 		# TODO: Fit your model here
 		print(train_y)
-		self.regressor = self.regressor.fit(train_x_2D, train_y)
+		self.regressor.fit(train_x_2D, train_y)
 
 # You don't have to change this function
 def cost_function(ground_truth: np.ndarray, predictions: np.ndarray, AREA_idxs: np.ndarray) -> float:
