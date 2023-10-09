@@ -49,9 +49,10 @@ class Model(object):
 
 		# TODO: Use the GP posterior to form your predictions here]
 		gp_mean, gp_std = self.regressor.predict(test_x_2D, return_std=True)
-		#print(f"predictions: {predictions}")
 		predictions = np.maximum(gp_mean, 0)
-		#print(predictions)
+		predictions = np.array([x + 17 if area else x for area, x in zip(test_x_AREA, predictions)])
+		print(f"predictions: {predictions}")
+
 
 		return predictions, gp_mean, gp_std
 
@@ -62,6 +63,7 @@ class Model(object):
 		:param train_y: Training pollution concentrations as a 1d NumPy float array of shape (NUM_SAMPLES,)
 		"""
 		# TODO: Fit your model here
+		print(train_y)
 		self.regressor = self.regressor.fit(train_x_2D, train_y)
 
 # You don't have to change this function
