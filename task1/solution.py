@@ -23,7 +23,7 @@ class Model(object):
 	without changing their signatures, but are allowed to create additional methods.
 	"""
 
-	def __init__(self, kernel=Product(ConstantKernel(),RBF())):
+	def __init__(self, kernel=None):
 		"""
 		Initialize your model here.
 		We already provide a random number generator for reproducibility.
