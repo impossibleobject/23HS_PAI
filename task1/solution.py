@@ -199,12 +199,11 @@ def extract_city_area_information(
 	:return: Tuple of (training features' 2D coordinates, training features' city_area information,
 		test features' 2D coordinates, test features' city_area information)
 	"""
+
 	train_x_2D = train_x[:, :2]  #np.zeros((train_x.shape[0], 2), dtype=float)
 	train_x_AREA = train_x[:, 2]  #np.zeros((train_x.shape[0],), dtype=bool)
 	test_x_2D = test_x[:, :2]  #np.zeros((test_x.shape[0], 2), dtype=float)
 	test_x_AREA = test_x[:, 2]  #np.zeros((test_x.shape[0],), dtype=bool)
-
-	#TODO: Extract the city_area information from the training and test features
 
 	assert train_x_2D.shape[0] == train_x_AREA.shape[0] and test_x_2D.shape[
 	    0] == test_x_AREA.shape[0]
