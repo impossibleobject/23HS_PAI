@@ -12,7 +12,7 @@ from sklearn import preprocessing
 np.random.seed(0)
 
 # The denominator by which we divide the number of samples
-SUBSAMPLE_DENOMINATOR = 5
+SUBSAMPLE_DENOMINATOR = 3
 
 # Load the datasets
 train_x = np.loadtxt('train_x.csv', delimiter=',', skiprows=1)
