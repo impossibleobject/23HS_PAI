@@ -46,11 +46,12 @@ param_grid = {
         Matern(),
         DotProduct(),
         #     ExpSineSquared(),
-        RationalQuadratic()
+        RationalQuadratic(),
+        Matern() * DotProduct() + WhiteKernel(),
     ]
 }
 
-clf = GaussianProcessRegressor(normalize_y=True)
+clf = GaussianProcessRegressor(normalize_y=True, n_restarts_optimizer=4)
 
 search = GS(clf,
             param_grid,
