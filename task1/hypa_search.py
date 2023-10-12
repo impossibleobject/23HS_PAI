@@ -48,6 +48,12 @@ param_grid = {
         #     ExpSineSquared(),
         RationalQuadratic(),
         Matern() * DotProduct() + WhiteKernel(),
+        RationalQuadratic(length_scale=1.0, alpha=0.1)+ WhiteKernel(),
+        RationalQuadratic(length_scale=1.0, alpha=0.1)+ WhiteKernel() + ConstantKernel(),
+        RationalQuadratic(length_scale=1.0, alpha=0.1)+ WhiteKernel() + ConstantKernel() + DotProduct(),
+        RationalQuadratic(length_scale=1.0, alpha=0.1)* Matern()+ WhiteKernel(),
+        DotProduct()* Matern()+ WhiteKernel(),
+        
     ]
 }
 
