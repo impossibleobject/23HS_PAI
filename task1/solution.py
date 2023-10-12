@@ -23,7 +23,7 @@ class Model(object):
 	without changing their signatures, but are allowed to create additional methods.
 	"""
 
-	def __init__(self, kernel=None):
+	def __init__(self, kernel=RationalQuadratic(alpha=0.1, length_scale=1) + WhiteKernel(noise_level=1) + 1**2 + DotProduct(sigma_0=1)):
 		"""
 		Initialize your model here.
 		We already provide a random number generator for reproducibility.
@@ -31,7 +31,7 @@ class Model(object):
 		self.rng = np.random.default_rng(seed=0)
 
 		# TODO: Add custom initialization for your model here if necessary
-		self.regressor = GaussianProcessRegressor(kernel=kernel)
+		self.regressor = GaussianProcessRegressor(kernel=kernel, n_restarts_optimizer=4)
 
 	def make_predictions(self, test_x_2D: np.ndarray, test_x_AREA: np.ndarray) -> typing.Tuple[np.ndarray, np.ndarray, np.ndarray]:
 		"""
