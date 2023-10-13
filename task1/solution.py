@@ -6,6 +6,8 @@ from sklearn.gaussian_process import GaussianProcessRegressor
 import matplotlib.pyplot as plt
 from matplotlib import cm
 
+import subsampling as ss
+
 # Set `EXTENDED_EVALUATION` to `True` in order to visualize your predictions.
 EXTENDED_EVALUATION = False
 EVALUATION_GRID_POINTS = 300  # Number of grid points used in extended evaluation
@@ -14,7 +16,7 @@ EVALUATION_GRID_POINTS = 300  # Number of grid points used in extended evaluatio
 COST_W_UNDERPREDICT = 50.0
 COST_W_NORMAL = 1.0
 
-SUBSAMPLE_DENOMINATOR = 3
+SUBSAMPLE_DENOMINATOR = 1
 
 
 class Model(object):
@@ -24,7 +26,10 @@ class Model(object):
 	without changing their signatures, but are allowed to create additional methods.
 	"""
 
-	def __init__(self, kernel=None):
+	#1 948.565 DotProduct(sigma_0=1) * Matern(length_scale=1, nu=1.5) + WhiteKernel(noise_level=1)
+	#2 948.761 1**2 * RationalQuadratic(alpha=0.1, length_scale=1) + WhiteKernel(noise_level=1) + 1**2 + DotProduct(sigma_0=1)
+	#3 		ConstantKernel() * DotProduct(sigma_0_bounds=(1e-10, 1e10))
+	def __init__(self, kernel=ConstantKernel() * DotProduct(sigma_0_bounds=(1e-10, 1e10))):
 		"""
 		Initialize your model here.
 		We already provide a random number generator for reproducibility.
@@ -32,7 +37,7 @@ class Model(object):
 		self.rng = np.random.default_rng(seed=0)
 
 		# TODO: Add custom initialization for your model here if necessary
-		self.regressor = GaussianProcessRegressor(kernel=kernel)
+		self.regressor = GaussianProcessRegressor(kernel=kernel, normalize_y=True, n_restarts_optimizer=20, alpha=0.01)
 
 	def make_predictions(
 	    self, test_x_2D: np.ndarray, test_x_AREA: np.ndarray
@@ -65,13 +70,13 @@ class Model(object):
 		:param train_x_2D: Training features as a 2d NumPy float array of shape (NUM_SAMPLES, 2)
 		:param train_y: Training pollution concentrations as a 1d NumPy float array of shape (NUM_SAMPLES,)
 		"""
-		sorted_idxs = np.argsort(train_y)[-train_y.shape[0] //
-		                                  SUBSAMPLE_DENOMINATOR:]
+		#sorted_idxs = np.argsort(train_y)[-train_y.shape[0] // SUBSAMPLE_DENOMINATOR:]
+		#print(train_y[sorted_idxs])
 
-		print(train_y[sorted_idxs])
+		train_x_2D_sub, train_y_sub = ss.subsample(train_x_2D, train_y)
 
-		self.regressor = self.regressor.fit(train_x_2D[sorted_idxs],
-		                                    train_y[sorted_idxs])
+		self.regressor = self.regressor.fit(train_x_2D_sub,
+		                                    train_y_sub)
 
 
 # You don't have to change this function
@@ -201,9 +206,9 @@ def extract_city_area_information(
 	"""
 
 	train_x_2D = train_x[:, :2]  #np.zeros((train_x.shape[0], 2), dtype=float)
-	train_x_AREA = train_x[:, 2]  #np.zeros((train_x.shape[0],), dtype=bool)
+	train_x_AREA = train_x[:, 2].astype("bool")  #np.zeros((train_x.shape[0],), dtype=bool)
 	test_x_2D = test_x[:, :2]  #np.zeros((test_x.shape[0], 2), dtype=float)
-	test_x_AREA = test_x[:, 2]  #np.zeros((test_x.shape[0],), dtype=bool)
+	test_x_AREA = test_x[:, 2].astype("bool")  #np.zeros((test_x.shape[0],), dtype=bool)
 
 	assert train_x_2D.shape[0] == train_x_AREA.shape[0] and test_x_2D.shape[
 	    0] == test_x_AREA.shape[0]
@@ -216,8 +221,9 @@ def extract_city_area_information(
 # you don't have to change this function
 def main():
 	# Load the training dateset and test features
-	train_x = np.loadtxt('train_x.csv', delimiter=',', skiprows=1)
-	train_y = np.loadtxt('train_y.csv', delimiter=',', skiprows=1)
+	assert(False)
+	train_x = np.loadtxt('train_x_subs.csv.npy', delimiter=',', skiprows=0)
+	train_y = np.loadtxt('train_y_subs.csv.npy', delimiter=',', skiprows=0)
 	test_x = np.loadtxt('test_x.csv', delimiter=',', skiprows=1)
 
 	# Extract the city_area information
