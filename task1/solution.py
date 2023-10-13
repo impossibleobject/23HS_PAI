@@ -29,7 +29,7 @@ class Model(object):
 	#1 948.565 DotProduct(sigma_0=1) * Matern(length_scale=1, nu=1.5) + WhiteKernel(noise_level=1)
 	#2 948.761 1**2 * RationalQuadratic(alpha=0.1, length_scale=1) + WhiteKernel(noise_level=1) + 1**2 + DotProduct(sigma_0=1)
 	#3 		ConstantKernel() * DotProduct(sigma_0_bounds=(1e-10, 1e10))
-	def __init__(self, kernel=ConstantKernel() * DotProduct(sigma_0_bounds=(1e-10, 1e10))):
+	def __init__(self, kernel=1**2 * RationalQuadratic(alpha=0.1, length_scale=1) + WhiteKernel(noise_level=1)):
 		"""
 		Initialize your model here.
 		We already provide a random number generator for reproducibility.
@@ -221,7 +221,7 @@ def extract_city_area_information(
 # you don't have to change this function
 def main():
 	# Load the training dateset and test features
-	assert(False)
+	#assert(False)
 	train_x = np.loadtxt('train_x_subs.csv.npy', delimiter=',', skiprows=0)
 	train_y = np.loadtxt('train_y_subs.csv.npy', delimiter=',', skiprows=0)
 	test_x = np.loadtxt('test_x.csv', delimiter=',', skiprows=1)
