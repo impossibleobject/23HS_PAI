@@ -23,7 +23,7 @@ class Model(object):
 	without changing their signatures, but are allowed to create additional methods.
 	"""
 
-	def __init__(self, kernel=RationalQuadratic(alpha=0.1, length_scale=1) + WhiteKernel(noise_level=1) + 1**2 + DotProduct(sigma_0=1)):
+	def __init__(self, kernel=DotProduct(sigma_0=1) * Matern(length_scale=1, nu=1.5) + WhiteKernel(noise_level=1)):
 		"""
 		Initialize your model here.
 		We already provide a random number generator for reproducibility.
