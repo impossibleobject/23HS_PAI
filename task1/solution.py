@@ -7,6 +7,7 @@ import matplotlib.pyplot as plt
 from matplotlib import cm
 
 import subsampling as ss
+import grid_sort as gs
 
 # Set `EXTENDED_EVALUATION` to `True` in order to visualize your predictions.
 EXTENDED_EVALUATION = False
@@ -31,7 +32,14 @@ class Model(object):
 	#3 		ConstantKernel() * DotProduct(sigma_0_bounds=(1e-10, 1e10))
 	#4 2900 1**2 * RationalQuadratic(alpha=0.1, length_scale=1) + WhiteKernel(noise_level=1)
 	#5 767 kernel=RBF()*DotProduct()
-	def __init__(self, kernel=RBF()*DotProduct()):
+	#6 678.823 filtering out non-negative points
+	#7 700sth grid search 10x10
+	#8 855.030 grid search 50x50
+	#9 686.386 5x5
+	#10 653.558 filtering out non-positive data points 
+	#11 692		setting negative points to 0.
+	#12 692.946 subsampling 50, 10x10 grid, not filtering out negative values
+	def __init__(self, kernel=RBF()*DotProduct(), n_squares=10):
 		"""
 		Initialize your model here.
 		We already provide a random number generator for reproducibility.
@@ -39,7 +47,11 @@ class Model(object):
 		self.rng = np.random.default_rng(seed=0)
 
 		# TODO: Add custom initialization for your model here if necessary
-		self.regressor = GaussianProcessRegressor(kernel=kernel, normalize_y=True, n_restarts_optimizer=20)
+		self.n_squares = n_squares
+		self.rgrs = np.zeros((n_squares, n_squares), dtype=object)
+		for i in range(n_squares):
+			for j in range(n_squares):
+				self.rgrs[i,j] = GaussianProcessRegressor(kernel=kernel, normalize_y=True, n_restarts_optimizer=20)
 
 	def make_predictions(
 	    self, test_x_2D: np.ndarray, test_x_AREA: np.ndarray
@@ -54,15 +66,22 @@ class Model(object):
 		"""
 
 		# TODO: Use your GP to estimate the posterior mean and stddev for each city_area here
-		#gp_mean = np.zeros(test_x_2D.shape[0], dtype=float)
-		#gp_std = np.zeros(test_x_2D.shape[0], dtype=float)
+		gp_mean = np.zeros(test_x_2D.shape[0], dtype=float)
+		gp_std = np.zeros(test_x_2D.shape[0], dtype=float)
 
 		# TODO: Use the GP posterior to form your predictions here]
-		gp_mean, gp_std = self.regressor.predict(test_x_2D, return_std=True)
+		test_idxs_in_square = gs.grid_sort(test_x_2D, n_squares=self.n_squares)
+		
+		for i in range(self.n_squares):
+			for j in range(self.n_squares):
+				idxs = test_idxs_in_square[i,j]
+				if idxs != []:
+					gp_mean[idxs], gp_std[idxs] = self.rgrs[i,j].predict(test_x_2D[idxs], return_std=True)
+
+
 		predictions = np.maximum(gp_mean, 0)
-		predictions = np.array(
-		    [x + 17 if area else x for area, x in zip(test_x_AREA, predictions)])
-		print(f"predictions: {predictions}")
+		predictions = np.array([x + 17 if area else x for area, x in zip(test_x_AREA, predictions)])
+		#print(f"predictions: {predictions}")
 
 		return predictions, gp_mean, gp_std
 
@@ -75,10 +94,25 @@ class Model(object):
 		#sorted_idxs = np.argsort(train_y)[-train_y.shape[0] // SUBSAMPLE_DENOMINATOR:]
 		#print(train_y[sorted_idxs])
 
-		train_x_2D_sub, train_y_sub = ss.subsample(train_x_2D, train_y)
+		#filter out negative datapoints
+		#filter out non-positive datapoints
+		#train_x_2D = train_x_2D[train_y>0]
+		#train_y = train_y[train_y>0]
 
-		self.regressor = self.regressor.fit(train_x_2D_sub,
-		                                    train_y_sub)
+		#train_y[train_y<0.] = 0.
+		subsample = True
+		if subsample:
+			train_x_2D, train_y = ss.subsample(train_x_2D, train_y)
+		
+		train_idxs_in_square = gs.grid_sort(train_x_2D, n_squares=self.n_squares)
+		for i in range(self.n_squares):
+			for j in range(self.n_squares):
+				idxs = train_idxs_in_square[i,j]
+				
+				self.rgrs[i,j].fit(train_x_2D[idxs], train_y[idxs])
+		#train_x_2D_sub, train_y_sub = ss.subsample(train_x_2D, train_y)
+
+		#self.regressor = self.regressor.fit(train_x_2D_sub, train_y_sub)
 
 
 # You don't have to change this function
@@ -224,8 +258,8 @@ def extract_city_area_information(
 def main():
 	# Load the training dateset and test features
 	#assert(False)
-	train_x = np.loadtxt('train_x_subs.csv.npy', delimiter=',', skiprows=0)
-	train_y = np.loadtxt('train_y_subs.csv.npy', delimiter=',', skiprows=0)
+	train_x = np.loadtxt('train_x.csv', delimiter=',', skiprows=1)
+	train_y = np.loadtxt('train_y.csv', delimiter=',', skiprows=1)
 	test_x = np.loadtxt('test_x.csv', delimiter=',', skiprows=1)
 
 	# Extract the city_area information

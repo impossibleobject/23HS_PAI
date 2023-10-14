@@ -6,19 +6,26 @@ import matplotlib.pyplot as plt
 
 
 
-def subsample(feats, labels, do_Area=False):
+def subsample(feats, labels, n_squares=50, do_Area=False):
+    """maps points to grid points averaging values if multiple points map to same one
+
+    Args:
+        feats (np.ndarray[float] nx2): 2d coordinates
+        labels (np.ndarray[float] n): pollution values at coord
+        do_Area (bool, optional): include area in subsampling. Defaults to False.
+    """
     def build_matrix(feats, labels):
         #filter out negative labels
         feats = feats[labels>0]
         labels = labels[labels>0]
 
         n_samples = feats.shape[0]
-        grid_sum = np.zeros((50,50))
-        grid_num = np.zeros((50,50))
-        if do_Area: grid_area = np.zeros((50,50))
+        grid_sum = np.zeros((n_squares,n_squares))
+        grid_num = np.zeros((n_squares,n_squares))
+        if do_Area: grid_area = np.zeros((n_squares,n_squares))
 
 
-        coords = np.linspace(0.0, 1.0, 50)
+        coords = np.linspace(0.0, 1.0, n_squares)
 
         def find_idx(discr_grid, cont_coord):
             discr_grid = np.asarray(discr_grid)
@@ -43,13 +50,21 @@ def subsample(feats, labels, do_Area=False):
 
 
     def new_train(grid_avg):
+        """maps training set of continuous coordinates to grid points
+
+        Args:
+            grid_avg (np.ndarray[float] n_squares x n_squares): grid with averaged values
+
+        Returns:
+            tuple(np.ndarray[float] (non_neg_samples)x2, np.ndarray[float] (non_neg_samples)): new feats, labels from grid without <0
+        """
         it = np.nditer(grid_avg, flags=['f_index'])
         X = []
         y = []
         for i in range(50):
             for j in range(50):
                 v = grid_avg[i,j]
-                if v != 0.:
+                if v >0.:
                     y.append(v)
                     #X.append((i/50., j/50., grid_area[i,j]))
                     X.append((i/50., j/50.))
