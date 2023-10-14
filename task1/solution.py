@@ -29,7 +29,9 @@ class Model(object):
 	#1 948.565 DotProduct(sigma_0=1) * Matern(length_scale=1, nu=1.5) + WhiteKernel(noise_level=1)
 	#2 948.761 1**2 * RationalQuadratic(alpha=0.1, length_scale=1) + WhiteKernel(noise_level=1) + 1**2 + DotProduct(sigma_0=1)
 	#3 		ConstantKernel() * DotProduct(sigma_0_bounds=(1e-10, 1e10))
-	def __init__(self, kernel=1**2 * RationalQuadratic(alpha=0.1, length_scale=1) + WhiteKernel(noise_level=1)):
+	#4 2900 1**2 * RationalQuadratic(alpha=0.1, length_scale=1) + WhiteKernel(noise_level=1)
+	#5 767 kernel=RBF()*DotProduct()
+	def __init__(self, kernel=RBF()*DotProduct()):
 		"""
 		Initialize your model here.
 		We already provide a random number generator for reproducibility.
@@ -37,7 +39,7 @@ class Model(object):
 		self.rng = np.random.default_rng(seed=0)
 
 		# TODO: Add custom initialization for your model here if necessary
-		self.regressor = GaussianProcessRegressor(kernel=kernel, normalize_y=True, n_restarts_optimizer=20, alpha=0.01)
+		self.regressor = GaussianProcessRegressor(kernel=kernel, normalize_y=True, n_restarts_optimizer=20)
 
 	def make_predictions(
 	    self, test_x_2D: np.ndarray, test_x_AREA: np.ndarray
@@ -59,7 +61,7 @@ class Model(object):
 		gp_mean, gp_std = self.regressor.predict(test_x_2D, return_std=True)
 		predictions = np.maximum(gp_mean, 0)
 		predictions = np.array(
-		    [x + 4 if area else x for area, x in zip(test_x_AREA, predictions)])
+		    [x + 17 if area else x for area, x in zip(test_x_AREA, predictions)])
 		print(f"predictions: {predictions}")
 
 		return predictions, gp_mean, gp_std

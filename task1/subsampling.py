@@ -8,6 +8,10 @@ import matplotlib.pyplot as plt
 
 def subsample(feats, labels, do_Area=False):
     def build_matrix(feats, labels):
+        #filter out negative labels
+        feats = feats[labels>0]
+        labels = labels[labels>0]
+
         n_samples = feats.shape[0]
         grid_sum = np.zeros((50,50))
         grid_num = np.zeros((50,50))
@@ -31,7 +35,8 @@ def subsample(feats, labels, do_Area=False):
             grid_sum[x_idx, y_idx] += v
             grid_num[x_idx, y_idx] += 1
             if do_Area: grid_area[x_idx, y_idx] = feats[i, 2]
-
+        
+        #avoid division by 0
         grid_num[grid_num==0] = 1
         
         return np.divide(grid_sum,grid_num) #, grid_area
@@ -44,9 +49,10 @@ def subsample(feats, labels, do_Area=False):
         for i in range(50):
             for j in range(50):
                 v = grid_avg[i,j]
-                y.append(v)
-                #X.append((i/50., j/50., grid_area[i,j]))
-                X.append((i/50., j/50.))
+                if v != 0.:
+                    y.append(v)
+                    #X.append((i/50., j/50., grid_area[i,j]))
+                    X.append((i/50., j/50.))
 
         X = np.array(X)
         y = np.array(y)

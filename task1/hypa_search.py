@@ -1,4 +1,4 @@
-from solution import Model, cost_function, extract_city_area_information
+from task1.solution_sanity_check import Model, cost_function, extract_city_area_information
 import numpy as np
 from joblib import dump, load  # sklearn-doc recommended this over pickle
 # explicitly require this experimental feature
