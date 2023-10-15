@@ -1,5 +1,11 @@
 import numpy as np
+from numpy.random import choice
 
+#set this a bit higher to account for spread between squares
+DESIRED_SAMPLES = 2000
+#P_CITY = 0.8
+#P_NON_CITY = 0.1
+np.random.seed(0)
 
 #assigns each point idx coordinate for grid
 def get_grid_coord(points, n_squares):
@@ -12,7 +18,7 @@ def get_grid_coord(points, n_squares):
     Returns:
         np.ndarray[int] nx2: 2d grid coordinates
     """
-    grid_points = np.linspace(0,1, n_squares)
+    grid_points = np.linspace(0,1, n_squares+1)[1:]
     #print(grid_points)
     def get_grid_idx(point, grid_points):
         x, y = point
@@ -23,9 +29,32 @@ def get_grid_coord(points, n_squares):
     return [get_grid_idx(p, grid_points) for p in points]
 
 
-#in: point list 
-#
-def grid_sort(points, n_squares=50):
+def subsample(idxs_in_square): #, test_x_AREA
+    """subsamples based on if points are in city area
+
+    Args:
+        idxs_in_square (np.ndarray[list obj] n_squares x n_squares): list of idxs in points for each grid square
+        test_x_AREA (np.ndarray[bool] n): is point at idx in city
+
+    Returns:
+        idxs_in_square (np.ndarray[list obj] n_squares x n_squares): subsampled input
+    """
+    n_squares = idxs_in_square.shape[0]
+    idxs_square = DESIRED_SAMPLES/n_squares
+
+    for i in range(n_squares):
+       for j in range(n_squares):
+            curr_idxs = idxs_in_square[i,j]
+            
+            if len(curr_idxs) > idxs_square:
+                #get_prob = lambda i : P_CITY if test_x_AREA[i] else P_NON_CITY
+                sub_idxs_area1 = choice(curr_idxs, idxs_square, replace=False) #, p=[get_prob[i] for i in curr_idxs]
+                idxs_in_square[i,j] = list(sub_idxs_area1)
+
+    
+    return idxs_in_square
+
+def grid_sort(points, n_squares, do_subsample=False):
     """gets idx list for each grid square
 
     Args:
@@ -46,6 +75,8 @@ def grid_sort(points, n_squares=50):
     for idx in range(len(points)):
         x_g, y_g = grid_coords[idx]
         idxs_in_square[x_g,y_g].append(idx)
+    if do_subsample:
+        idxs_in_square = subsample(idxs_in_square)
     
     return idxs_in_square
 
@@ -57,13 +88,16 @@ def test_if_empty(idxs_in_square):
                  print(f"empty square {i, j}")
 
 
+
+
+
 def main():
     train_x = np.loadtxt('train_x.csv', delimiter=',', skiprows=1)
-    train_y = np.loadtxt("train_y.csv", skiprows=1, dtype="float", delimiter=",")
-    train_x = train_x[train_y>=0]
+    #train_y = np.loadtxt("train_y.csv", skiprows=1, dtype="float", delimiter=",")
+    #train_x = train_x[train_y>=0]
     #print(train_x[:, :2])
     #print(get_grid_coord(train_x[:, :2], 10))
-    grid = grid_sort(train_x[:, :2], n_squares=5)
+    grid = grid_sort(train_x[:, :2], n_squares=4)
 
     test_if_empty(grid)
 

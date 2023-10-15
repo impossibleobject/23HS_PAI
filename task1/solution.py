@@ -10,7 +10,7 @@ import subsampling as ss
 import grid_sort as gs
 
 # Set `EXTENDED_EVALUATION` to `True` in order to visualize your predictions.
-EXTENDED_EVALUATION = False
+EXTENDED_EVALUATION = True
 EVALUATION_GRID_POINTS = 300  # Number of grid points used in extended evaluation
 
 # Cost function constants
@@ -18,6 +18,8 @@ COST_W_UNDERPREDICT = 50.0
 COST_W_NORMAL = 1.0
 
 SUBSAMPLE_DENOMINATOR = 1
+
+RESIDENTIAL_OFFSET = 20
 
 
 class Model(object):
@@ -39,7 +41,7 @@ class Model(object):
 	#10 653.558 filtering out non-positive data points 
 	#11 692		setting negative points to 0.
 	#12 692.946 subsampling 50, 10x10 grid, not filtering out negative values
-	def __init__(self, kernel=RBF()*DotProduct(), n_squares=10):
+	def __init__(self, kernel=RBF()*DotProduct(), n_squares=5):
 		"""
 		Initialize your model here.
 		We already provide a random number generator for reproducibility.
@@ -78,9 +80,8 @@ class Model(object):
 				if idxs != []:
 					gp_mean[idxs], gp_std[idxs] = self.rgrs[i,j].predict(test_x_2D[idxs], return_std=True)
 
-
 		predictions = np.maximum(gp_mean, 0)
-		predictions = np.array([x + 17 if area else x for area, x in zip(test_x_AREA, predictions)])
+		predictions = np.array([x + RESIDENTIAL_OFFSET if area else x for area, x in zip(test_x_AREA, predictions)])
 		#print(f"predictions: {predictions}")
 
 		return predictions, gp_mean, gp_std
@@ -100,7 +101,7 @@ class Model(object):
 		#train_y = train_y[train_y>0]
 
 		#train_y[train_y<0.] = 0.
-		subsample = True
+		subsample = False
 		if subsample:
 			train_x_2D, train_y = ss.subsample(train_x_2D, train_y)
 		
@@ -187,7 +188,7 @@ def determine_city_area_idx(visualization_xs_2D):
 
 
 # You don't have to change this function
-def perform_extended_evaluation(model: Model, output_dir: str = '/results'):
+def perform_extended_evaluation(model: Model, output_dir: str = './results'):
 	"""
 	Visualizes the predictions of a fitted model.
 	:param model: Fitted model to be visualized
@@ -228,6 +229,7 @@ def perform_extended_evaluation(model: Model, output_dir: str = '/results'):
 	print(f'Saved extended evaluation to {figure_path}')
 
 	plt.show()
+	plt.close()
 
 
 def extract_city_area_information(

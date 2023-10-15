@@ -52,6 +52,8 @@ param_grid = {
     "kernel": [
         ConstantKernel() * DotProduct(sigma_0_bounds=(1e-10, 1e10)),
         RBF(length_scale_bounds=(1e-10, 1e10)) * DotProduct(sigma_0_bounds=(1e-10, 1e10)),
+        RBF()*DotProduct(),
+        Matern()*DotProduct(),
         ConstantKernel() * DotProduct(sigma_0_bounds=(1e-10, 1e10)) + WhiteKernel(noise_level_bounds=(1e-10, 1e10)),
         #     ExpSineSquared(),
         ConstantKernel() * RationalQuadratic(length_scale_bounds=(1e-10, 1e10)),
