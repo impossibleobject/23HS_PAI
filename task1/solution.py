@@ -81,7 +81,7 @@ class Model(object):
 					gp_mean[idxs], gp_std[idxs] = self.rgrs[i,j].predict(test_x_2D[idxs], return_std=True)
 
 		predictions = np.maximum(gp_mean, 0)
-		predictions = np.array([x + std if area else x for area, x, std in zip(test_x_AREA, predictions, gp_std)])
+		predictions = np.array([x + std*5 if area else x for area, x, std in zip(test_x_AREA, predictions, gp_std)])
 		#print(f"predictions: {predictions}")
 
 		return predictions, gp_mean, gp_std
