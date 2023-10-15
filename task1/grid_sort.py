@@ -2,7 +2,7 @@ import numpy as np
 from numpy.random import choice
 
 #set this a bit higher to account for spread between squares
-DESIRED_SAMPLES = 2000
+DESIRED_SAMPLES = 1000
 #P_CITY = 0.8
 #P_NON_CITY = 0.1
 np.random.seed(0)
@@ -40,7 +40,7 @@ def subsample(idxs_in_square): #, test_x_AREA
         idxs_in_square (np.ndarray[list obj] n_squares x n_squares): subsampled input
     """
     n_squares = idxs_in_square.shape[0]
-    idxs_square = DESIRED_SAMPLES/n_squares
+    idxs_square = DESIRED_SAMPLES//n_squares
 
     for i in range(n_squares):
        for j in range(n_squares):
@@ -97,9 +97,14 @@ def main():
     #train_x = train_x[train_y>=0]
     #print(train_x[:, :2])
     #print(get_grid_coord(train_x[:, :2], 10))
-    grid = grid_sort(train_x[:, :2], n_squares=4)
+    train_X_2d = train_x[:, :2]
+    grid1 = grid_sort(train_X_2d, n_squares=4, do_subsample=True)
+    #print(grid1)
+    print("second one")
+    #grid2 = grid_sort(train_X_2d, n_squares=4, do_subsample=True)
+    #print(grid2)
 
-    test_if_empty(grid)
+    #test_if_empty(grid)
 
 
 

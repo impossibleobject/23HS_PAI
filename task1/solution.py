@@ -10,7 +10,7 @@ import subsampling as ss
 import grid_sort as gs
 
 # Set `EXTENDED_EVALUATION` to `True` in order to visualize your predictions.
-EXTENDED_EVALUATION = True
+EXTENDED_EVALUATION = False
 EVALUATION_GRID_POINTS = 300  # Number of grid points used in extended evaluation
 
 # Cost function constants
@@ -41,7 +41,7 @@ class Model(object):
 	#10 653.558 filtering out non-positive data points 
 	#11 692		setting negative points to 0.
 	#12 692.946 subsampling 50, 10x10 grid, not filtering out negative values
-	def __init__(self, kernel=RBF()*DotProduct(), n_squares=5):
+	def __init__(self, kernel=RBF()*DotProduct(), n_squares=4):
 		"""
 		Initialize your model here.
 		We already provide a random number generator for reproducibility.
@@ -81,7 +81,7 @@ class Model(object):
 					gp_mean[idxs], gp_std[idxs] = self.rgrs[i,j].predict(test_x_2D[idxs], return_std=True)
 
 		predictions = np.maximum(gp_mean, 0)
-		predictions = np.array([x + RESIDENTIAL_OFFSET if area else x for area, x in zip(test_x_AREA, predictions)])
+		predictions = np.array([x + std if area else x for area, x, std in zip(test_x_AREA, predictions, gp_std)])
 		#print(f"predictions: {predictions}")
 
 		return predictions, gp_mean, gp_std
