@@ -18,14 +18,18 @@ def get_grid_coord(points, n_squares):
     Returns:
         np.ndarray[int] nx2: 2d grid coordinates
     """
-    grid_points = np.linspace(0,1, n_squares+1)[1:]
+    max_coord = points.max()
+    grid_points = np.linspace(0,max_coord, n_squares+1)[1:]
+    #print(len(grid_points))
     #print(grid_points)
     def get_grid_idx(point, grid_points):
         x, y = point
+        #print(x,y)
         idx_x = np.searchsorted(grid_points, x)
         idx_y = np.searchsorted(grid_points, y)
         return idx_x, idx_y
-    
+    #print(points[0])
+    #print(get_grid_idx(points[0], grid_points))
     return [get_grid_idx(p, grid_points) for p in points]
 
 
@@ -74,6 +78,7 @@ def grid_sort(points, n_squares, do_subsample=False):
     grid_coords = get_grid_coord(points, n_squares)
     for idx in range(len(points)):
         x_g, y_g = grid_coords[idx]
+        print(x_g, y_g)
         idxs_in_square[x_g,y_g].append(idx)
     if do_subsample:
         idxs_in_square = subsample(idxs_in_square)

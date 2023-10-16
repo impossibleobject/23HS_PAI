@@ -5,6 +5,7 @@ import numpy as np
 from sklearn.gaussian_process import GaussianProcessRegressor
 import matplotlib.pyplot as plt
 from matplotlib import cm
+from sklearn.preprocessing import StandardScaler
 
 import subsampling as ss
 import grid_sort as gs
@@ -49,11 +50,14 @@ class Model(object):
 		self.rng = np.random.default_rng(seed=0)
 
 		# TODO: Add custom initialization for your model here if necessary
+		self.scaler = StandardScaler()
 		self.n_squares = n_squares
 		self.rgrs = np.zeros((n_squares, n_squares), dtype=object)
 		for i in range(n_squares):
 			for j in range(n_squares):
 				self.rgrs[i,j] = GaussianProcessRegressor(kernel=kernel, normalize_y=True, n_restarts_optimizer=20)
+
+
 
 	def make_predictions(
 	    self, test_x_2D: np.ndarray, test_x_AREA: np.ndarray
@@ -81,7 +85,7 @@ class Model(object):
 					gp_mean[idxs], gp_std[idxs] = self.rgrs[i,j].predict(test_x_2D[idxs], return_std=True)
 
 		predictions = np.maximum(gp_mean, 0)
-		predictions = np.array([x + std*5 if area else x for area, x, std in zip(test_x_AREA, predictions, gp_std)])
+		predictions = np.array([x + std if area else x for area, x, std in zip(test_x_AREA, predictions, gp_std)])
 		#print(f"predictions: {predictions}")
 
 		return predictions, gp_mean, gp_std
@@ -101,9 +105,15 @@ class Model(object):
 		#train_y = train_y[train_y>0]
 
 		#train_y[train_y<0.] = 0.
-		subsample = False
-		if subsample:
+		
+		do_subsample = False
+		if do_subsample:
 			train_x_2D, train_y = ss.subsample(train_x_2D, train_y)
+
+		do_scale = True
+		if do_scale:
+			self.scaler = self.scaler.fit(train_x_2D)
+			train_x_2D = self.scaler.transform(train_x_2D)
 		
 		train_idxs_in_square = gs.grid_sort(train_x_2D, n_squares=self.n_squares)
 		for i in range(self.n_squares):
