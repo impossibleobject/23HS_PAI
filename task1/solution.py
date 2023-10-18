@@ -45,7 +45,7 @@ class Model(object):
 	#11 692		setting negative points to 0.
 	#12 692.946 subsampling 50, 10x10 grid, not filtering out negative values
 	def __init__(self,
-	             kernel=RBF() * DotProduct(),
+	             kernel=RationalQuadratic(),
 	             n_squares=4,
 	             do_pred_grid=False):
 		print(os.getcwd())
@@ -118,7 +118,7 @@ class Model(object):
 		predictions = np.maximum(gp_mean, 0)
 
 		predictions = np.array([
-		    x + 17 if area else x
+		    x + std if area else x
 		    for area, x, std in zip(test_x_AREA, predictions, gp_std)
 		])
 		#print(f"predictions: {predictions}")
