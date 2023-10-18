@@ -57,7 +57,7 @@ class Model(object):
 
 		# TODO: Add custom initialization for your model here if necessary
 		self.scaler = StandardScaler()
-		self.nystroem = Nystroem(kernel=kernel, n_jobs=-1, n_components=2)
+		self.nystroem = Nystroem(kernel=kernel, n_jobs=-1, n_components=4)
 		self.do_pred_grid = do_pred_grid
 		self.n_squares = n_squares
 		if self.do_pred_grid:
@@ -118,7 +118,7 @@ class Model(object):
 		predictions = np.maximum(gp_mean, 0)
 
 		predictions = np.array([
-		    x + std if area else x
+		    x + 0 if area else x
 		    for area, x, std in zip(test_x_AREA, predictions, gp_std)
 		])
 		#print(f"predictions: {predictions}")
