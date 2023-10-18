@@ -6,6 +6,7 @@ from sklearn.gaussian_process import GaussianProcessRegressor
 import matplotlib.pyplot as plt
 from matplotlib import cm
 from sklearn.preprocessing import StandardScaler
+from sklearn.kernel_approximation import Nystroem
 
 import subsampling as ss
 import grid_sort as gs
@@ -40,10 +41,13 @@ class Model(object):
 	#7 700sth grid search 10x10
 	#8 855.030 grid search 50x50
 	#9 686.386 5x5
-	#10 653.558 filtering out non-positive data points 
+	#10 653.558 filtering out non-positive data points
 	#11 692		setting negative points to 0.
 	#12 692.946 subsampling 50, 10x10 grid, not filtering out negative values
-	def __init__(self, kernel=RBF()*DotProduct(), n_squares=4, do_pred_grid=False):
+	def __init__(self,
+	             kernel=RBF() * DotProduct(),
+	             n_squares=4,
+	             do_pred_grid=False):
 		print(os.getcwd())
 		"""
 		Initialize your model here.
@@ -59,11 +63,9 @@ class Model(object):
 			self.rgrs = np.zeros((n_squares, n_squares), dtype=object)
 			for i in range(n_squares):
 				for j in range(n_squares):
-					self.rgrs[i,j] = GaussianProcessRegressor(kernel=kernel, normalize_y=True, n_restarts_optimizer=20)
+					self.rgrs[i, j] = Nystroem(kernel=kernel, n_jobs=-1)
 		else:
-			self.rgrs = GaussianProcessRegressor(kernel=kernel, normalize_y=True, n_restarts_optimizer=20)
-
-
+			self.rgrs = Nystroem(kernel=kernel, n_jobs=-1)
 
 	def make_predictions(
 	    self, test_x_2D: np.ndarray, test_x_AREA: np.ndarray
@@ -82,35 +84,36 @@ class Model(object):
 		gp_std = np.zeros(test_x_2D.shape[0], dtype=float)
 
 		# TODO: Use the GP posterior to form your predictions here]
-		
-		if self.do_pred_grid: 
-			test_idxs_in_square = gs.grid_sort(test_x_2D, n_squares=self.n_squares)
+
+		if self.do_pred_grid:
+			test_idxs_in_square = gs.grid_sort(test_x_2D,
+			                                   n_squares=self.n_squares)
 			for i in range(self.n_squares):
 				for j in range(self.n_squares):
-					idxs = test_idxs_in_square[i,j]
+					idxs = test_idxs_in_square[i, j]
 					if idxs != []:
-						gp_mean[idxs], gp_std[idxs] = self.rgrs[i,j].predict(test_x_2D[idxs], return_std=True)
+						gp_mean[idxs], gp_std[idxs] = self.rgrs[i, j].predict(
+						    test_x_2D[idxs], return_std=True)
 		else:
 			#idxs = list(chain.from_iterable([l for l in test_idxs_in_square]))[0]
 			gp_mean, gp_std = self.rgrs.predict(test_x_2D, return_std=True)
 
 		do_print_pred = True
 		if do_print_pred:
-			split1 = np.array_split(gp_mean,4)
+			split1 = np.array_split(gp_mean, 4)
 			print("gp_mean:")
 			for m in split1:
 				print(m)
 			print("gp_std")
-			split2 = np.array_split(gp_std,4)
+			split2 = np.array_split(gp_std, 4)
 			for s in split2:
 				print(s)
-			
-
-
 
 		predictions = np.maximum(gp_mean, 0)
-		
-		predictions = np.array([x + std if area else x for area, x, std in zip(test_x_AREA, predictions, gp_std)])
+		'''predictions = np.array([
+		    x + std if area else x
+		    for area, x, std in zip(test_x_AREA, predictions, gp_std)
+		])'''
 		#print(f"predictions: {predictions}")
 
 		return predictions, gp_mean, gp_std
@@ -130,7 +133,7 @@ class Model(object):
 		#train_y = train_y[train_y>0]
 
 		#train_y[train_y<0.] = 0.
-		
+
 		do_subsample = False
 		if do_subsample:
 			train_x_2D, train_y = ss.subsample(train_x_2D, train_y)
@@ -139,15 +142,20 @@ class Model(object):
 		if do_scale:
 			self.scaler = self.scaler.fit(train_x_2D)
 			train_x_2D = self.scaler.transform(train_x_2D)
-		
-		train_idxs_in_square = gs.grid_sort(train_x_2D, n_squares=self.n_squares, do_subsample=True)
+
+		train_idxs_in_square = gs.grid_sort(train_x_2D,
+		                                    n_squares=self.n_squares,
+		                                    do_subsample=True)
 		if self.do_pred_grid:
 			for i in range(self.n_squares):
 				for j in range(self.n_squares):
-					idxs = train_idxs_in_square[i,j]
-					self.regrs[i, j] = self.rgrs[i,j].fit(train_x_2D[idxs], train_y[idxs])
+					idxs = train_idxs_in_square[i, j]
+					self.regrs[i, j] = self.rgrs[i,
+					                             j].fit(train_x_2D[idxs],
+					                                    train_y[idxs])
 		else:
-			idxs = list(chain.from_iterable([l for l in train_idxs_in_square]))[0]
+			idxs = list(chain.from_iterable([l
+			                                 for l in train_idxs_in_square]))[0]
 			print(len(idxs))
 			self.rgrs = self.rgrs.fit(train_x_2D[idxs], train_y[idxs])
 		#train_x_2D_sub, train_y_sub = ss.subsample(train_x_2D, train_y)
@@ -283,9 +291,11 @@ def extract_city_area_information(
 	"""
 
 	train_x_2D = train_x[:, :2]  #np.zeros((train_x.shape[0], 2), dtype=float)
-	train_x_AREA = train_x[:, 2].astype("bool")  #np.zeros((train_x.shape[0],), dtype=bool)
+	train_x_AREA = train_x[:, 2].astype(
+	    "bool")  #np.zeros((train_x.shape[0],), dtype=bool)
 	test_x_2D = test_x[:, :2]  #np.zeros((test_x.shape[0], 2), dtype=float)
-	test_x_AREA = test_x[:, 2].astype("bool")  #np.zeros((test_x.shape[0],), dtype=bool)
+	test_x_AREA = test_x[:, 2].astype(
+	    "bool")  #np.zeros((test_x.shape[0],), dtype=bool)
 
 	assert train_x_2D.shape[0] == train_x_AREA.shape[0] and test_x_2D.shape[
 	    0] == test_x_AREA.shape[0]
