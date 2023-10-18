@@ -2,7 +2,7 @@ import numpy as np
 from numpy.random import choice
 
 #set this a bit higher to account for spread between squares
-DESIRED_SAMPLES = 1000
+DESIRED_SAMPLES = 2000
 #P_CITY = 0.8
 #P_NON_CITY = 0.1
 np.random.seed(0)
@@ -78,7 +78,7 @@ def grid_sort(points, n_squares, do_subsample=False):
     grid_coords = get_grid_coord(points, n_squares)
     for idx in range(len(points)):
         x_g, y_g = grid_coords[idx]
-        print(x_g, y_g)
+        #print(x_g, y_g)
         idxs_in_square[x_g,y_g].append(idx)
     if do_subsample:
         idxs_in_square = subsample(idxs_in_square)

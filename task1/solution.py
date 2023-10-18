@@ -42,7 +42,8 @@ class Model(object):
 	#10 653.558 filtering out non-positive data points 
 	#11 692		setting negative points to 0.
 	#12 692.946 subsampling 50, 10x10 grid, not filtering out negative values
-	def __init__(self, kernel=RBF()*DotProduct(), n_squares=4):
+	def __init__(self, kernel=RBF()*DotProduct(), n_squares=2):
+		print(os.getcwd())
 		"""
 		Initialize your model here.
 		We already provide a random number generator for reproducibility.
@@ -84,7 +85,22 @@ class Model(object):
 				if idxs != []:
 					gp_mean[idxs], gp_std[idxs] = self.rgrs[i,j].predict(test_x_2D[idxs], return_std=True)
 
+		do_print_pred = True
+		if do_print_pred:
+			split1 = np.array_split(gp_mean,4)
+			print("gp_mean:")
+			for m in split1:
+				print(m)
+			print("gp_std")
+			split2 = np.array_split(gp_std,4)
+			for s in split2:
+				print(s)
+			
+
+
+
 		predictions = np.maximum(gp_mean, 0)
+		
 		predictions = np.array([x + std if area else x for area, x, std in zip(test_x_AREA, predictions, gp_std)])
 		#print(f"predictions: {predictions}")
 
@@ -110,12 +126,12 @@ class Model(object):
 		if do_subsample:
 			train_x_2D, train_y = ss.subsample(train_x_2D, train_y)
 
-		do_scale = True
+		do_scale = False
 		if do_scale:
 			self.scaler = self.scaler.fit(train_x_2D)
 			train_x_2D = self.scaler.transform(train_x_2D)
 		
-		train_idxs_in_square = gs.grid_sort(train_x_2D, n_squares=self.n_squares)
+		train_idxs_in_square = gs.grid_sort(train_x_2D, n_squares=self.n_squares, do_subsample=True)
 		for i in range(self.n_squares):
 			for j in range(self.n_squares):
 				idxs = train_idxs_in_square[i,j]
