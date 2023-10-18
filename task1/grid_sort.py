@@ -106,7 +106,7 @@ def main():
     #print(get_grid_coord(train_x[:, :2], 10))
     train_X_2d = train_x[:, :2]
     grid1 = grid_sort(train_X_2d, n_squares=4, do_subsample=True)
-    print()
+    print(train_X_2d[list(chain.from_iterable([l for l in grid1]))[0]])
     #print(grid1)
     print("second one")
     #grid2 = grid_sort(train_X_2d, n_squares=4, do_subsample=True)
