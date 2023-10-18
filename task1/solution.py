@@ -57,15 +57,21 @@ class Model(object):
 
 		# TODO: Add custom initialization for your model here if necessary
 		self.scaler = StandardScaler()
+		self.nystroem = Nystroem(kernel=kernel, n_jobs=-1, n_components=1)
 		self.do_pred_grid = do_pred_grid
 		self.n_squares = n_squares
 		if self.do_pred_grid:
 			self.rgrs = np.zeros((n_squares, n_squares), dtype=object)
 			for i in range(n_squares):
 				for j in range(n_squares):
-					self.rgrs[i, j] = Nystroem(kernel=kernel, n_jobs=-1)
+					self.rgrs[i, j] = GaussianProcessRegressor(
+					    kernel=kernel,
+					    normalize_y=True,
+					    n_restarts_optimizer=20)
 		else:
-			self.rgrs = Nystroem(kernel=kernel, n_jobs=-1)
+			self.rgrs = GaussianProcessRegressor(kernel=kernel,
+			                                     normalize_y=True,
+			                                     n_restarts_optimizer=20)
 
 	def make_predictions(
 	    self, test_x_2D: np.ndarray, test_x_AREA: np.ndarray
@@ -84,7 +90,7 @@ class Model(object):
 		gp_std = np.zeros(test_x_2D.shape[0], dtype=float)
 
 		# TODO: Use the GP posterior to form your predictions here]
-
+		test_x_2D = self.nystroem.transform(test_x_2D)
 		if self.do_pred_grid:
 			test_idxs_in_square = gs.grid_sort(test_x_2D,
 			                                   n_squares=self.n_squares)
@@ -110,10 +116,11 @@ class Model(object):
 				print(s)
 
 		predictions = np.maximum(gp_mean, 0)
-		'''predictions = np.array([
+
+		predictions = np.array([
 		    x + std if area else x
 		    for area, x, std in zip(test_x_AREA, predictions, gp_std)
-		])'''
+		])
 		#print(f"predictions: {predictions}")
 
 		return predictions, gp_mean, gp_std
@@ -142,10 +149,10 @@ class Model(object):
 		if do_scale:
 			self.scaler = self.scaler.fit(train_x_2D)
 			train_x_2D = self.scaler.transform(train_x_2D)
-
 		train_idxs_in_square = gs.grid_sort(train_x_2D,
 		                                    n_squares=self.n_squares,
 		                                    do_subsample=True)
+		train_x_2D = self.nystroem.fit_transform(train_x_2D, train_y)
 		if self.do_pred_grid:
 			for i in range(self.n_squares):
 				for j in range(self.n_squares):
