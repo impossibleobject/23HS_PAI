@@ -43,7 +43,7 @@ class Model(object):
 	#10 653.558 filtering out non-positive data points 
 	#11 692		setting negative points to 0.
 	#12 692.946 subsampling 50, 10x10 grid, not filtering out negative values
-	def __init__(self, kernel=RBF()*DotProduct(), n_squares=4, do_pred_grid=False):
+	def __init__(self, kernel=RationalQuadratic(), n_squares=4, do_pred_grid=False):
 		print(os.getcwd())
 		"""
 		Initialize your model here.
@@ -149,7 +149,7 @@ class Model(object):
 		else:
 			idxs = list(chain.from_iterable([l for l in train_idxs_in_square]))[0]
 			print(len(idxs))
-			self.rgrs = self.rgrs.fit(train_x_2D[idxs], train_y[idxs])
+			self.rgrs = self.rgrs.fit(train_x_2D, train_y)
 		#train_x_2D_sub, train_y_sub = ss.subsample(train_x_2D, train_y)
 
 		#self.regressor = self.regressor.fit(train_x_2D_sub, train_y_sub)

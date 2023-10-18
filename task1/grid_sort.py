@@ -46,7 +46,7 @@ def subsample(idxs_in_square): #, test_x_AREA
         idxs_in_square (np.ndarray[list obj] n_squares x n_squares): subsampled input
     """
     n_squares = idxs_in_square.shape[0]
-    idxs_square = DESIRED_SAMPLES//n_squares
+    idxs_square = DESIRED_SAMPLES//n_squares**2
 
     for i in range(n_squares):
        for j in range(n_squares):
@@ -82,8 +82,8 @@ def grid_sort(points, n_squares, do_subsample=False):
         x_g, y_g = grid_coords[idx]
         #print(x_g, y_g)
         idxs_in_square[x_g,y_g].append(idx)
-    if do_subsample:
-        idxs_in_square = subsample(idxs_in_square)
+        if do_subsample:
+            idxs_in_square = subsample(idxs_in_square)
     
     return idxs_in_square
 
@@ -106,7 +106,8 @@ def main():
     #print(get_grid_coord(train_x[:, :2], 10))
     train_X_2d = train_x[:, :2]
     grid1 = grid_sort(train_X_2d, n_squares=4, do_subsample=True)
-    print(train_X_2d[list(chain.from_iterable([l for l in grid1]))[0]])
+    print(grid1[0,0], grid1[2,1])
+    print(len(list(chain.from_iterable([l for row in grid1 for l in row]))))
     #print(grid1)
     print("second one")
     #grid2 = grid_sort(train_X_2d, n_squares=4, do_subsample=True)
