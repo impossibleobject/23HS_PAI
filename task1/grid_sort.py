@@ -1,6 +1,8 @@
 import numpy as np
 from numpy.random import choice
 
+from itertools import chain
+
 #set this a bit higher to account for spread between squares
 DESIRED_SAMPLES = 2000
 #P_CITY = 0.8
@@ -104,6 +106,7 @@ def main():
     #print(get_grid_coord(train_x[:, :2], 10))
     train_X_2d = train_x[:, :2]
     grid1 = grid_sort(train_X_2d, n_squares=4, do_subsample=True)
+    print()
     #print(grid1)
     print("second one")
     #grid2 = grid_sort(train_X_2d, n_squares=4, do_subsample=True)

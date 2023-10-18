@@ -9,6 +9,7 @@ from sklearn.preprocessing import StandardScaler
 
 import subsampling as ss
 import grid_sort as gs
+from itertools import chain
 
 # Set `EXTENDED_EVALUATION` to `True` in order to visualize your predictions.
 EXTENDED_EVALUATION = False
@@ -42,7 +43,7 @@ class Model(object):
 	#10 653.558 filtering out non-positive data points 
 	#11 692		setting negative points to 0.
 	#12 692.946 subsampling 50, 10x10 grid, not filtering out negative values
-	def __init__(self, kernel=RBF()*DotProduct(), n_squares=2):
+	def __init__(self, kernel=RBF()*DotProduct(), n_squares=4, do_pred_grid=False):
 		print(os.getcwd())
 		"""
 		Initialize your model here.
@@ -52,11 +53,15 @@ class Model(object):
 
 		# TODO: Add custom initialization for your model here if necessary
 		self.scaler = StandardScaler()
+		self.do_pred_grid = do_pred_grid
 		self.n_squares = n_squares
-		self.rgrs = np.zeros((n_squares, n_squares), dtype=object)
-		for i in range(n_squares):
-			for j in range(n_squares):
-				self.rgrs[i,j] = GaussianProcessRegressor(kernel=kernel, normalize_y=True, n_restarts_optimizer=20)
+		if self.do_pred_grid:
+			self.rgrs = np.zeros((n_squares, n_squares), dtype=object)
+			for i in range(n_squares):
+				for j in range(n_squares):
+					self.rgrs[i,j] = GaussianProcessRegressor(kernel=kernel, normalize_y=True, n_restarts_optimizer=20)
+		else:
+			self.rgrs = GaussianProcessRegressor(kernel=kernel, normalize_y=True, n_restarts_optimizer=20)
 
 
 
@@ -77,13 +82,17 @@ class Model(object):
 		gp_std = np.zeros(test_x_2D.shape[0], dtype=float)
 
 		# TODO: Use the GP posterior to form your predictions here]
-		test_idxs_in_square = gs.grid_sort(test_x_2D, n_squares=self.n_squares)
 		
-		for i in range(self.n_squares):
-			for j in range(self.n_squares):
-				idxs = test_idxs_in_square[i,j]
-				if idxs != []:
-					gp_mean[idxs], gp_std[idxs] = self.rgrs[i,j].predict(test_x_2D[idxs], return_std=True)
+		if self.do_pred_grid: 
+			test_idxs_in_square = gs.grid_sort(test_x_2D, n_squares=self.n_squares)
+			for i in range(self.n_squares):
+				for j in range(self.n_squares):
+					idxs = test_idxs_in_square[i,j]
+					if idxs != []:
+						gp_mean[idxs], gp_std[idxs] = self.rgrs[i,j].predict(test_x_2D[idxs], return_std=True)
+		else:
+			#idxs = list(chain.from_iterable([l for l in test_idxs_in_square]))[0]
+			gp_mean, gp_std = self.rgrs.predict(test_x_2D, return_std=True)
 
 		do_print_pred = True
 		if do_print_pred:
@@ -132,11 +141,15 @@ class Model(object):
 			train_x_2D = self.scaler.transform(train_x_2D)
 		
 		train_idxs_in_square = gs.grid_sort(train_x_2D, n_squares=self.n_squares, do_subsample=True)
-		for i in range(self.n_squares):
-			for j in range(self.n_squares):
-				idxs = train_idxs_in_square[i,j]
-				
-				self.rgrs[i,j].fit(train_x_2D[idxs], train_y[idxs])
+		if self.do_pred_grid:
+			for i in range(self.n_squares):
+				for j in range(self.n_squares):
+					idxs = train_idxs_in_square[i,j]
+					self.regrs[i, j] = self.rgrs[i,j].fit(train_x_2D[idxs], train_y[idxs])
+		else:
+			idxs = list(chain.from_iterable([l for l in train_idxs_in_square]))[0]
+			print(len(idxs))
+			self.rgrs = self.rgrs.fit(train_x_2D[idxs], train_y[idxs])
 		#train_x_2D_sub, train_y_sub = ss.subsample(train_x_2D, train_y)
 
 		#self.regressor = self.regressor.fit(train_x_2D_sub, train_y_sub)
