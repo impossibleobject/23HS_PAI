@@ -57,7 +57,7 @@ class Model(object):
 
 		# TODO: Add custom initialization for your model here if necessary
 		self.scaler = StandardScaler()
-		self.nystroem = Nystroem(kernel=kernel, n_jobs=-1, n_components=1)
+		self.nystroem = Nystroem(kernel=kernel, n_jobs=-1, n_components=2)
 		self.do_pred_grid = do_pred_grid
 		self.n_squares = n_squares
 		if self.do_pred_grid:
