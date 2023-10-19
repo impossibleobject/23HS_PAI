@@ -111,7 +111,8 @@ class Model(object):
 
 		#predictions = np.maximum(gp_mean, 0)
 		predictions = gp_mean
-		predictions = np.array([x + std if area else x for area, x, std in zip(test_x_AREA, predictions, gp_std)])
+  		# cv a param oliwia und auf ganzen daten machen 
+		predictions = np.array([x + a*std if area else x for area, x, std in zip(test_x_AREA, predictions, gp_std)])
 		print("done predicting")
 		#print(f"predictions: {predictions}")
 

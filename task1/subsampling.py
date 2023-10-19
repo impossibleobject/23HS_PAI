@@ -7,7 +7,7 @@ from numpy.linalg import norm
 
 np.random.seed(0)
 
-def subsample(X, y, goal_samples, do_scale_w_y=True):
+def subsample(X, y, goal_samples, do_scale_w_y=False):
     idxs = np.array(list(range(X.shape[0])))
     #get y into prob range by sum normalization, set negative vals to 0
     y[y<0.] = 0.
