@@ -2,13 +2,11 @@ import os
 import typing
 from sklearn.gaussian_process.kernels import *
 import numpy as np
-from sklearn.gaussian_process import GaussianProcessRegressor
+from sklearn.gaussian_process import GaussianProcessRegressor, GaussianProcessClassifier
 import matplotlib.pyplot as plt
-from matplotlib import cm
-from sklearn.preprocessing import StandardScaler
+from sklearn.preprocessing import MaxAbsScaler
 from sklearn.kernel_approximation import Nystroem
 
-import subsampling as ss
 import grid_sort as gs
 from itertools import chain
 
@@ -20,7 +18,7 @@ EVALUATION_GRID_POINTS = 300  # Number of grid points used in extended evaluatio
 COST_W_UNDERPREDICT = 50.0
 COST_W_NORMAL = 1.0
 
-SUBSAMPLE_DENOMINATOR = 1
+SUBSAMPLE_DENOMINATOR = 10
 
 RESIDENTIAL_OFFSET = 20
 
@@ -45,9 +43,7 @@ class Model(object):
 	#11 692		setting negative points to 0.
 	#12 692.946 subsampling 50, 10x10 grid, not filtering out negative values
 	def __init__(self,
-	             kernel=RationalQuadratic(),
-	             n_squares=4,
-	             do_pred_grid=False):
+	             kernel=RBF()*DotProduct()):
 		print(os.getcwd())
 		"""
 		Initialize your model here.
@@ -56,23 +52,18 @@ class Model(object):
 		self.rng = np.random.default_rng(seed=0)
 
 		# TODO: Add custom initialization for your model here if necessary
-		self.scaler = StandardScaler()
-		self.nystroem = Nystroem(kernel=kernel, n_jobs=-1, n_components=1)
-		self.do_pred_grid = do_pred_grid
-		self.n_squares = n_squares
-		if self.do_pred_grid:
-			self.rgrs = np.zeros((n_squares, n_squares), dtype=object)
-			for i in range(n_squares):
-				for j in range(n_squares):
-					self.rgrs[i, j] = GaussianProcessRegressor(
+
+		self.reg_high = GaussianProcessRegressor(
 					    kernel=kernel,
 					    normalize_y=True,
 					    n_restarts_optimizer=20)
-		else:
-			self.rgrs = GaussianProcessRegressor(kernel=kernel,
-			                                     normalize_y=True,
-			                                     n_restarts_optimizer=20)
+		
+		self.classifier = GaussianProcessClassifier(n_jobs=-1)
 
+		self.reg_low = GaussianProcessRegressor(
+					    kernel=kernel,
+					    normalize_y=True,
+					    n_restarts_optimizer=20)
 	def make_predictions(
 	    self, test_x_2D: np.ndarray, test_x_AREA: np.ndarray
 	) -> typing.Tuple[np.ndarray, np.ndarray, np.ndarray]:
@@ -85,43 +76,27 @@ class Model(object):
 			containing your predictions, the GP posterior mean, and the GP posterior stddev (in that order)
 		"""
 
-		# TODO: Use your GP to estimate the posterior mean and stddev for each city_area here
-		gp_mean = np.zeros(test_x_2D.shape[0], dtype=float)
-		gp_std = np.zeros(test_x_2D.shape[0], dtype=float)
-
 		# TODO: Use the GP posterior to form your predictions here]
-		test_x_2D = self.nystroem.transform(test_x_2D)
-		if self.do_pred_grid:
-			test_idxs_in_square = gs.grid_sort(test_x_2D,
-			                                   n_squares=self.n_squares)
-			for i in range(self.n_squares):
-				for j in range(self.n_squares):
-					idxs = test_idxs_in_square[i, j]
-					if idxs != []:
-						gp_mean[idxs], gp_std[idxs] = self.rgrs[i, j].predict(
-						    test_x_2D[idxs], return_std=True)
-		else:
-			#idxs = list(chain.from_iterable([l for l in test_idxs_in_square]))[0]
-			gp_mean, gp_std = self.rgrs.predict(test_x_2D, return_std=True)
+		gp_mean, gp_std = np.zeros((test_x_2D.shape[0])), np.zeros((test_x_2D.shape[0]))
+		
+		class_predictions = np.round(self.classifier.predict(test_x_2D))
 
-		do_print_pred = True
-		if do_print_pred:
-			split1 = np.array_split(gp_mean, 4)
-			print("gp_mean:")
-			for m in split1:
-				print(m)
-			print("gp_std")
-			split2 = np.array_split(gp_std, 4)
-			for s in split2:
-				print(s)
+		high_idxs = np.abs(class_predictions - 1) <= 4e-1
+		low_idxs = np.abs(class_predictions - 1) > 4e-1
+
+		high_entries = test_x_2D[high_idxs]
+		low_entries = test_x_2D[low_idxs]
+
+		high_preds, high_std = self.reg_high.predict(high_entries, return_std=True)
+		low_preds, low_std = self.reg_low.predict(low_entries, return_std=True)
+
+		gp_mean[high_idxs] = high_preds
+		gp_std[high_idxs] = high_std
+
+		gp_mean[low_idxs] = low_preds
+		gp_std[low_idxs] = low_std
 
 		predictions = np.maximum(gp_mean, 0)
-
-		predictions = np.array([
-		    x + std if area else x
-		    for area, x, std in zip(test_x_AREA, predictions, gp_std)
-		])
-		#print(f"predictions: {predictions}")
 
 		return predictions, gp_mean, gp_std
 
@@ -131,43 +106,36 @@ class Model(object):
 		:param train_x_2D: Training features as a 2d NumPy float array of shape (NUM_SAMPLES, 2)
 		:param train_y: Training pollution concentrations as a 1d NumPy float array of shape (NUM_SAMPLES,)
 		"""
-		#sorted_idxs = np.argsort(train_y)[-train_y.shape[0] // SUBSAMPLE_DENOMINATOR:]
-		#print(train_y[sorted_idxs])
+		cutoff = np.median(train_y) + np.std(train_y)
 
-		#filter out negative datapoints
-		#filter out non-positive datapoints
-		#train_x_2D = train_x_2D[train_y>0]
-		#train_y = train_y[train_y>0]
+		idxs = np.random.choice(range(train_y.shape[0]), size=train_y.shape[0]//SUBSAMPLE_DENOMINATOR, replace=False)
+		print(idxs)
+		print(len(idxs))
+		train_y = train_y[idxs]
+		train_x_2D = train_x_2D[idxs]
 
-		#train_y[train_y<0.] = 0.
+		idxs_low = train_y <= cutoff
+		idxs_high = train_y > cutoff
 
-		do_subsample = False
-		if do_subsample:
-			train_x_2D, train_y = ss.subsample(train_x_2D, train_y)
+		train_x_low = train_x_2D[idxs_low]
+		train_x_high = train_x_2D[idxs_high]
 
-		do_scale = False
-		if do_scale:
-			self.scaler = self.scaler.fit(train_x_2D)
-			train_x_2D = self.scaler.transform(train_x_2D)
-		train_idxs_in_square = gs.grid_sort(train_x_2D,
-		                                    n_squares=self.n_squares,
-		                                    do_subsample=False)
-		train_x_2D = self.nystroem.fit_transform(train_x_2D, train_y)
-		if self.do_pred_grid:
-			for i in range(self.n_squares):
-				for j in range(self.n_squares):
-					idxs = train_idxs_in_square[i, j]
-					self.regrs[i, j] = self.rgrs[i,
-					                             j].fit(train_x_2D[idxs],
-					                                    train_y[idxs])
-		else:
-			idxs = list(chain.from_iterable([l
-			                                 for l in train_idxs_in_square]))[0]
-			print(len(idxs))
-			self.rgrs = self.rgrs.fit(train_x_2D[idxs], train_y[idxs])
-		#train_x_2D_sub, train_y_sub = ss.subsample(train_x_2D, train_y)
+		train_y_low = train_y[idxs_low]
+		train_y_high = train_y[idxs_high]
+		
+		train_sets = [train_x_low, train_x_high]
+		#y_sets = [train_y_low, train_y_high]
+		
+		self.reg_low = self.reg_low.fit(train_x_low, train_y_low)
+		self.reg_high = self.reg_high.fit(train_x_high, train_y_high)
 
-		#self.regressor = self.regressor.fit(train_x_2D_sub, train_y_sub)
+
+		areas = np.concatenate((train_x_low, train_x_high))
+		classes = np.concatenate((np.zeros((train_x_low.shape[0])), np.ones(train_x_high.shape[0])))
+
+		print(classes)
+
+		self.classifier = self.classifier.fit(areas, classes)
 
 
 # You don't have to change this function
