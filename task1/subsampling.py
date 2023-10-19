@@ -2,11 +2,27 @@ import numpy as np
 
 import matplotlib.pyplot as plt
 
+from numpy.random import choice
+from numpy.linalg import norm
+
+np.random.seed(0)
+
+def subsample(X, y, goal_samples, do_scale_w_y=True):
+    idxs = np.array(list(range(X.shape[0])))
+    #get y into prob range by sum normalization, set negative vals to 0
+    y[y<0.] = 0.
+    y_norm = y/y.sum()
+    #print(y_norm)
+    if do_scale_w_y:
+        idxs_sub = choice(a=idxs, size=goal_samples, p=y_norm, replace=False)
+    else:
+        idxs_sub = choice(a=idxs, size=goal_samples, replace=False)
+    return X[idxs_sub], y[idxs_sub]
 
 
 
-
-def subsample(feats, labels, n_squares=50, do_Area=False):
+#we don't use this anymore
+def grid_subsample(feats, labels, n_squares=50, do_Area=False):
     """maps points to grid points averaging values if multiple points map to same one
 
     Args:
@@ -104,7 +120,25 @@ def subsample(feats, labels, n_squares=50, do_Area=False):
 
 
 
+def main():
+    train_x = np.loadtxt('train_x.csv', delimiter=',', skiprows=1)
+    train_y = np.loadtxt("train_y.csv", skiprows=1, dtype="float", delimiter=",")
+    #train_x = train_x[train_y>=0]
+    #print(train_x[:, :2])
+    #print(get_grid_coord(train_x[:, :2], 10))
+    train_X_2d = train_x[:, :2]
+    
+    train_x_sub, train_y_sub = subsample(train_X_2d, train_y, 2000)
+    #print(grid2)
 
+    #test_if_empty(grid)
+
+
+
+
+
+if __name__ == "__main__":
+	main()
 
 
 

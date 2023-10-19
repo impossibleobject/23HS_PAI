@@ -19,7 +19,7 @@ EVALUATION_GRID_POINTS = 300  # Number of grid points used in extended evaluatio
 COST_W_UNDERPREDICT = 50.0
 COST_W_NORMAL = 1.0
 
-SUBSAMPLE_DENOMINATOR = 1
+SUBSAMPLE_GOAL_SAMPLES = 5000
 
 RESIDENTIAL_OFFSET = 20
 
@@ -43,7 +43,8 @@ class Model(object):
 	#10 653.558 filtering out non-positive data points 
 	#11 692		setting negative points to 0.
 	#12 692.946 subsampling 50, 10x10 grid, not filtering out negative values
-	def __init__(self, kernel=RationalQuadratic(), n_squares=4, do_pred_grid=False):
+	#mainly been using RationalQuadratic() (Florian) and RBF()*DotProduct
+	def __init__(self, kernel=RationalQuadratic(), n_squares=4, do_ss=True, do_pred_grid=False, do_ss_grid=False):
 		print(os.getcwd())
 		"""
 		Initialize your model here.
@@ -54,7 +55,10 @@ class Model(object):
 		# TODO: Add custom initialization for your model here if necessary
 		self.scaler = StandardScaler()
 		self.do_pred_grid = do_pred_grid
+		self.do_ss = do_ss #regular subsampling
+		self.do_ss_grid = do_ss_grid #specialised subsampling in each grid square
 		self.n_squares = n_squares
+		
 		if self.do_pred_grid:
 			self.rgrs = np.zeros((n_squares, n_squares), dtype=object)
 			for i in range(n_squares):
@@ -62,7 +66,7 @@ class Model(object):
 					self.rgrs[i,j] = GaussianProcessRegressor(kernel=kernel, normalize_y=True, n_restarts_optimizer=20)
 		else:
 			self.rgrs = GaussianProcessRegressor(kernel=kernel, normalize_y=True, n_restarts_optimizer=20)
-
+		print("done initializing")
 
 
 	def make_predictions(
@@ -84,7 +88,7 @@ class Model(object):
 		# TODO: Use the GP posterior to form your predictions here]
 		
 		if self.do_pred_grid: 
-			test_idxs_in_square = gs.grid_sort(test_x_2D, n_squares=self.n_squares)
+			test_idxs_in_square = gs.grid_sort(test_x_2D, n_squares=self.n_squares, do_subsample=self.do_ss_grid, goal_subsamples=SUBSAMPLE_GOAL_SAMPLES)
 			for i in range(self.n_squares):
 				for j in range(self.n_squares):
 					idxs = test_idxs_in_square[i,j]
@@ -104,13 +108,11 @@ class Model(object):
 			split2 = np.array_split(gp_std,4)
 			for s in split2:
 				print(s)
-			
 
-
-
-		predictions = np.maximum(gp_mean, 0)
-		
+		#predictions = np.maximum(gp_mean, 0)
+		predictions = gp_mean
 		predictions = np.array([x + std if area else x for area, x, std in zip(test_x_AREA, predictions, gp_std)])
+		print("done predicting")
 		#print(f"predictions: {predictions}")
 
 		return predictions, gp_mean, gp_std
@@ -121,35 +123,36 @@ class Model(object):
 		:param train_x_2D: Training features as a 2d NumPy float array of shape (NUM_SAMPLES, 2)
 		:param train_y: Training pollution concentrations as a 1d NumPy float array of shape (NUM_SAMPLES,)
 		"""
-		#sorted_idxs = np.argsort(train_y)[-train_y.shape[0] // SUBSAMPLE_DENOMINATOR:]
-		#print(train_y[sorted_idxs])
-
 		#filter out negative datapoints
 		#filter out non-positive datapoints
 		#train_x_2D = train_x_2D[train_y>0]
 		#train_y = train_y[train_y>0]
 
+		#replace negative values with 0.
 		#train_y[train_y<0.] = 0.
 		
-		do_subsample = False
-		if do_subsample:
-			train_x_2D, train_y = ss.subsample(train_x_2D, train_y)
+		
 
 		do_scale = False
 		if do_scale:
 			self.scaler = self.scaler.fit(train_x_2D)
 			train_x_2D = self.scaler.transform(train_x_2D)
 		
-		train_idxs_in_square = gs.grid_sort(train_x_2D, n_squares=self.n_squares, do_subsample=True)
+		
 		if self.do_pred_grid:
+			train_idxs_in_square = gs.grid_sort(train_x_2D, n_squares=self.n_squares, do_subsample=self.do_ss_grid, goal_subsamples=SUBSAMPLE_GOAL_SAMPLES)
 			for i in range(self.n_squares):
 				for j in range(self.n_squares):
 					idxs = train_idxs_in_square[i,j]
 					self.regrs[i, j] = self.rgrs[i,j].fit(train_x_2D[idxs], train_y[idxs])
 		else:
-			idxs = list(chain.from_iterable([l for l in train_idxs_in_square]))[0]
-			print(len(idxs))
+			if self.do_ss:
+				train_x_2D, train_y = ss.subsample(train_x_2D, train_y, SUBSAMPLE_GOAL_SAMPLES)
+			#idxs = list(chain.from_iterable([l for l in train_idxs_in_square]))[0]
+			#print(len(idxs))
+
 			self.rgrs = self.rgrs.fit(train_x_2D, train_y)
+		print("done fitting")
 		#train_x_2D_sub, train_y_sub = ss.subsample(train_x_2D, train_y)
 
 		#self.regressor = self.regressor.fit(train_x_2D_sub, train_y_sub)
