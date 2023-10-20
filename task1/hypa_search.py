@@ -68,7 +68,25 @@ param_grid = {
     ]
 }
 
-clf = GaussianProcessRegressor(normalize_y=True, n_restarts_optimizer=20, alpha=0.01)
+param_grid = {
+    "a" : list(np.linspace(0, 2, 20)) + [4, 10]
+    }
+
+clf = GaussianProcessRegressor(normalize_y=True, n_restarts_optimizer=20, alpha=0.01, kernel=RationalQuadratic())
+clf = clf.fit(train_x_2D, train_y)
+gp_mean, gp_std = clf.predict(train_x_2D)
+
+class CustomRegressor:
+    def ___init___(self, a):
+        self.a = a
+        self.gp_mean = gp_mean
+        self.gp_std = gp_std
+
+    def fit(self, X, y):
+        x=1
+    
+    def predict(self, X):
+        x=1
 
 search = GS(clf,
             param_grid,
