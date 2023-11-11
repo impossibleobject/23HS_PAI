@@ -113,7 +113,9 @@ class SWAGInference(object):
         model_dir: pathlib.Path,
         # TODO(1): change inference_mode to InferenceMode.SWAG_DIAGONAL
         # TODO(2): change inference_mode to InferenceMode.SWAG_FULL
-        inference_mode: InferenceMode = InferenceMode.MAP,
+        
+        #inference_mode: InferenceMode = InferenceMode.MAP,
+        inference_mode: InferenceMode = InferenceMode.SWAG_DIAGONAL,
         # TODO(2): optionally add/tweak hyperparameters
         swag_epochs: int = 30,
         swag_learning_rate: float = 0.045,
@@ -154,6 +156,10 @@ class SWAGInference(object):
         #  Hint: you never need to consider the full vector of weights,
         #  but can always act on per-layer weights (in the format that _create_weight_copy() returns)
 
+        weight_path = self.model_dir / "map_weights.pt"
+        
+        #self.network.load_state_dict(torch.load(weight_path))
+        
         # Full SWAG
         # TODO(2): create attributes for SWAG-diagonal
         #  Hint: check collections.deque
