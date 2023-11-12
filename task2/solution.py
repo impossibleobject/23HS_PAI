@@ -343,12 +343,15 @@ class SWAGInference(object):
                 self.sample_parameters()
                 prob = 1
                 for name, param in self.network.named_parameters():
+                    print(param.shape)
                     mean = self.weights[name] / self.swag_epochs
                     theta_sq_avg = self.weights_squared[name]/self.swag_epochs
-                    current_std = torch.sqrt(torch.abs(theta_sq_avg - mean**2))
+                    print(theta_sq_avg.size())
+                    current_std = torch.sqrt(torch.abs(theta_sq_avg- mean**2))
 
-                    dist = torch.distributions.MultivariateNormal(loc = mean, covariance_matrix = current_std)
+                    dist = torch.distributions.Normal(loc = mean, scale = current_std)
                     prob *= torch.exp(dist.log_prob(param))
+                    print(prob)
                 #probabilities.append(prob)
                 # TODO(1): Perform inference for all samples in `loader` using current model sample,
                 #  and add the predictions to per_model_sample_predictions
@@ -394,6 +397,9 @@ class SWAGInference(object):
             # Diagonal part
             #sampled_param = current_mean + current_std * z_1 #replaced in 388
             sampled_param = torch.normal(mean=current_mean, std=current_std)
+
+            #own test
+            assert(sampled_param.size() == param.size())
 
             self._update_batchnorm()
 
