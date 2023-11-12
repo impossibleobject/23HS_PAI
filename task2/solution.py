@@ -33,13 +33,13 @@ Note that MAP inference can take a long time.
 
 
 def main():
-    raise RuntimeError(
-        "This main() method is for illustrative purposes only"
-        " and will NEVER be called when running your solution to generate your submission file!\n"
-        "The checker always directly interacts with your SWAGInference class and evaluate method.\n"
-        "You can remove this exception for local testing, but be aware that any changes to the main() method"
-        " are ignored when generating your submission file."
-    )
+    # raise RuntimeError(
+    #     "This main() method is for illustrative purposes only"
+    #     " and will NEVER be called when running your solution to generate your submission file!\n"
+    #     "The checker always directly interacts with your SWAGInference class and evaluate method.\n"
+    #     "You can remove this exception for local testing, but be aware that any changes to the main() method"
+    #     " are ignored when generating your submission file."
+    # )
 
     data_dir = pathlib.Path.cwd()
     model_dir = pathlib.Path.cwd()
@@ -117,7 +117,7 @@ class SWAGInference(object):
         # TODO(2): change inference_mode to InferenceMode.SWAG_FULL
         inference_mode: InferenceMode = InferenceMode.SWAG_DIAGONAL,
         # TODO(2): optionally add/tweak hyperparameters
-        swag_epochs: int = 30,
+        swag_epochs: int = 5, #30
         swag_learning_rate: float = 0.045,
         swag_update_freq: int = 1,
         deviation_matrix_max_rank: int = 15,
@@ -158,7 +158,6 @@ class SWAGInference(object):
         self.weights = self._create_weight_copy()
         self.weights_squared = self._create_weight_copy()
         #print(self.weights)
-        #self.avg = np.avg()
 
 
         # Full SWAG
@@ -181,8 +180,9 @@ class SWAGInference(object):
         for name, param in current_params.items():
             # TODO(1): update SWAG-diagonal attributes for weight `name` using `current_params` and `param`
             #raise NotImplementedError("Update SWAG-diagonal statistics")
-            self.weights[name] += param[name].detach()
-            self.weights_squared[name] += param[name].detach()**2
+            #print(param)
+            self.weights[name] += param.detach()
+            self.weights_squared[name] += param.detach()**2
 
         # Full SWAG
         if self.inference_mode == InferenceMode.SWAG_FULL:
@@ -301,22 +301,27 @@ class SWAGInference(object):
             #raise NotImplementedError("Sample network parameters")
             theta_SWA = {k:v/self.swag_epochs for k,v in self.weights.items()}
 
+            #build diagonal matrix
             theta_sq_avg = {k:v/self.swag_epochs for k,v in self.weights_squared.items()}
             theta_SWA_sq = {k:v**2 for k,v in theta_SWA.items()}
-            diag_values = {}
-            diag = torch.diag(theta_sq_avg - theta_SWA_sq)
-            
-            # specify arguments for the normal distribution call
-            dist_args = {
-                "mean":theta_SWA,
-                "std": diag,
-                }
+            diag_dict = {k: theta_sq_avg[k] - theta_SWA_sq.get(k, 0) for k in theta_sq_avg}
+            print(diag_dict)
+            print(torch.Tensor(list(diag_dict)))
+            diag = torch.diag(torch.Tensor(list(diag_dict.values())))
 
-            sample_weights = [torch.normal(*dist_args) for _ in range(self.bma_samples)]
+            print(diag)
+            
+            sample_weights = [torch.normal(mean=theta_SWA,std=diag) for _ in range(self.bma_samples)]
+            #sample_weights = torch.normal(mean=theta_SWA,std=diag) #
+            print(sample_weights.shape)
+            print(sample_weights)
+            print(loader.shape)
+            print(loader)
 
             # TODO(1): Perform inference for all samples in `loader` using current model sample,
             #  and add the predictions to per_model_sample_predictions
             #raise NotImplementedError("Perform inference using current model")
+            #per_model_sample_predictions = 
 
             
 
