@@ -15,6 +15,8 @@ from matplotlib import pyplot as plt
 
 from util import draw_reliability_diagram, cost_function, setup_seeds, calc_calibration_curve
 
+import random
+
 EXTENDED_EVALUATION = False
 """
 Set `EXTENDED_EVALUATION` to `True` in order to generate additional plots on validation data.
@@ -113,7 +115,7 @@ class SWAGInference(object):
         model_dir: pathlib.Path,
         # TODO(1): change inference_mode to InferenceMode.SWAG_DIAGONAL
         # TODO(2): change inference_mode to InferenceMode.SWAG_FULL
-        inference_mode: InferenceMode = InferenceMode.MAP,
+        inference_mode: InferenceMode = InferenceMode.SWAG_DIAGONAL,
         # TODO(2): optionally add/tweak hyperparameters
         swag_epochs: int = 30,
         swag_learning_rate: float = 0.045,
@@ -153,6 +155,7 @@ class SWAGInference(object):
         #  as a dictionary that maps from weight name to values.
         #  Hint: you never need to consider the full vector of weights,
         #  but can always act on per-layer weights (in the format that _create_weight_copy() returns)
+        self.diag = self._create_weight_copy()
 
         # Full SWAG
         # TODO(2): create attributes for SWAG-diagonal
@@ -173,7 +176,10 @@ class SWAGInference(object):
         # SWAG-diagonal
         for name, param in current_params.items():
             # TODO(1): update SWAG-diagonal attributes for weight `name` using `current_params` and `param`
-            raise NotImplementedError("Update SWAG-diagonal statistics")
+            #raise NotImplementedError("Update SWAG-diagonal statistics")
+            self.diag[name] = param
+            
+            
 
         # Full SWAG
         if self.inference_mode == InferenceMode.SWAG_FULL:
@@ -209,7 +215,8 @@ class SWAGInference(object):
         )
 
         # TODO(1): Perform initialization for SWAG fitting
-        raise NotImplementedError("Initialize SWAG fitting")
+        #raise NotImplementedError("Initialize SWAG fitting")
+        self.diag = self._create_weight_copy()        
 
         self.network.train()
         with tqdm.trange(self.swag_epochs, desc="Running gradient descent for SWA") as pbar:
@@ -241,8 +248,11 @@ class SWAGInference(object):
                     pbar.set_postfix(pbar_dict)
 
                 # TODO(1): Implement periodic SWAG updates using the attributes defined in __init__
-                raise NotImplementedError("Periodically update SWAG statistics")
+                #raise NotImplementedError("Periodically update SWAG statistics")
+                if random.random() < self.swag_update_freq: #use update frequency as probability of performing update
+                    self.diag = self.update_swag()
 
+                
     def calibrate(self, validation_data: torch.utils.data.Dataset) -> None:
         """
         Calibrate your predictions using a small validation set.
@@ -284,11 +294,15 @@ class SWAGInference(object):
         per_model_sample_predictions = []
         for _ in tqdm.trange(self.bma_samples, desc="Performing Bayesian model averaging"):
             # TODO(1): Sample new parameters for self.network from the SWAG approximate posterior
-            raise NotImplementedError("Sample network parameters")
+            #raise NotImplementedError("Sample network parameters")
+            new_params = _
+            
 
             # TODO(1): Perform inference for all samples in `loader` using current model sample,
             #  and add the predictions to per_model_sample_predictions
-            raise NotImplementedError("Perform inference using current model")
+            #raise NotImplementedError("Perform inference using current model")
+
+            
 
         assert len(per_model_sample_predictions) == self.bma_samples
         assert all(
@@ -300,7 +314,7 @@ class SWAGInference(object):
 
         # TODO(1): Average predictions from different model samples into bma_probabilities
         raise NotImplementedError("Aggregate predictions from model samples")
-        bma_probabilities = ...
+        #bma_probabilities = ...
 
         assert bma_probabilities.dim() == 2 and bma_probabilities.size(1) == 6  # N x C
         return bma_probabilities
