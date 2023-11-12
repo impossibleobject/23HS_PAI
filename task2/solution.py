@@ -117,7 +117,7 @@ class SWAGInference(object):
         # TODO(2): change inference_mode to InferenceMode.SWAG_FULL
         inference_mode: InferenceMode = InferenceMode.SWAG_DIAGONAL,
         # TODO(2): optionally add/tweak hyperparameters
-        swag_epochs: int = 5, #30
+        swag_epochs: int = 2, #30
         swag_learning_rate: float = 0.045,
         swag_update_freq: int = 1,
         deviation_matrix_max_rank: int = 15,
@@ -279,7 +279,46 @@ class SWAGInference(object):
         assert val_ys.size() == (140,)
         assert val_is_snow.size() == (140,)
         assert val_is_cloud.size() == (140,)
+    SHAPES_DICT = typing.Dict[
+            str,
+            typing.Tuple[
+                int,
+                int,
+                typing.List[int]]]
+    def __flatten_dict(self, input_dict: typing.Dict[str, torch.Tensor]) -> typing.Tuple[
+        torch.Tensor,
+        typing.Dict[
+            str,
+            typing.Tuple[
+                int,
+                int,
+                typing.List[int]]]]:
+        '''This function gets a dict of paramters and flattens them into a one dimensional tensor. Shape contains the names of the parameter and which range in the tensor contains it.'''
+        tensors = []
+        shapes = {}
+        counter = 0
+        for param_name, param_values in input_dict.items():
+            flat_params = param_values.flatten()
+            tensors.append(flat_params)
+            shapes[param_name] = (counter, counter + flat_params.shape[0], param_values.shape)
+            counter += flat_params.shape[0]
 
+        return torch.cat(tensors), shapes
+    
+    def __unflatten_dict(self, input_tensor: torch.Tensor, shapes: typing.Dict[
+            str,
+            typing.Tuple[
+                int,
+                int,
+                typing.List[int]]]) -> typing.Dict[str, torch.Tensor]:
+        '''Takes a tensor flattened by __flatten_dict as well as the returned shape and returns it back to the original shape specified by shapes (which is returned by __flatten_dict).'''
+        return {
+            name: input_tensor[start:end].unflatten(0, shape)
+            for name, (start, end), shape in shapes.items()
+            }
+    
+
+    
     def predict_probabilities_swag(self, loader: torch.utils.data.DataLoader) -> torch.Tensor:
         """
         Perform Bayesian model averaging using your SWAG statistics and predict
@@ -296,34 +335,28 @@ class SWAGInference(object):
         # for each datapoint, you can save time by sampling self.bma_samples networks,
         # and perform inference with each network on all samples in loader.
         per_model_sample_predictions = []
+        #probabilities = []
         for _ in tqdm.trange(self.bma_samples, desc="Performing Bayesian model averaging"):
             # TODO(1): Sample new parameters for self.network from the SWAG approximate posterior
             #raise NotImplementedError("Sample network parameters")
-            theta_SWA = {k:v/self.swag_epochs for k,v in self.weights.items()}
+            with torch.inference_mode():
+                self.sample_parameters()
+                prob = 1
+                for name, param in self.network.named_parameters():
+                    mean = self.weights[name] / self.swag_epochs
+                    theta_sq_avg = self.weights_squared[name]/self.swag_epochs
+                    current_std = torch.sqrt(torch.abs(theta_sq_avg - mean**2))
 
-            #build diagonal matrix
-            theta_sq_avg = {k:v/self.swag_epochs for k,v in self.weights_squared.items()}
-            theta_SWA_sq = {k:v**2 for k,v in theta_SWA.items()}
-            diag_dict = {k: theta_sq_avg[k] - theta_SWA_sq.get(k, 0) for k in theta_sq_avg}
-            print(diag_dict)
-            print(torch.Tensor(list(diag_dict)))
-            diag = torch.diag(torch.Tensor(list(diag_dict.values())))
-
-            print(diag)
-            
-            sample_weights = [torch.normal(mean=theta_SWA,std=diag) for _ in range(self.bma_samples)]
-            #sample_weights = torch.normal(mean=theta_SWA,std=diag) #
-            print(sample_weights.shape)
-            print(sample_weights)
-            print(loader.shape)
-            print(loader)
-
-            # TODO(1): Perform inference for all samples in `loader` using current model sample,
-            #  and add the predictions to per_model_sample_predictions
-            #raise NotImplementedError("Perform inference using current model")
-            #per_model_sample_predictions = 
-
-            
+                    dist = torch.distributions.MultivariateNormal(loc = mean, covariance_matrix = current_std)
+                    prob *= torch.exp(dist.log_prob(param))
+                #probabilities.append(prob)
+                # TODO(1): Perform inference for all samples in `loader` using current model sample,
+                #  and add the predictions to per_model_sample_predictions
+                #raise NotImplementedError("Perform inference using current model")
+                prediction = []
+                for (batch_xs,) in loader:
+                    prediction.append(self.network(batch_xs))
+                per_model_sample_predictions.append(prob*torch.cat(prediction))
 
         assert len(per_model_sample_predictions) == self.bma_samples
         assert all(
@@ -332,10 +365,10 @@ class SWAGInference(object):
             and model_sample_predictions.size(1) == 6
             for model_sample_predictions in per_model_sample_predictions
         )
-
+        
         # TODO(1): Average predictions from different model samples into bma_probabilities
-        raise NotImplementedError("Aggregate predictions from model samples")
-        #bma_probabilities = ...
+        #raise NotImplementedError("Aggregate predictions from model samples")
+        bma_probabilities = torch.sum(torch.stack(per_model_sample_predictions,dim=0), dim=0)
 
         assert bma_probabilities.dim() == 2 and bma_probabilities.size(1) == 6  # N x C
         return bma_probabilities
@@ -346,19 +379,23 @@ class SWAGInference(object):
         For simplicity, this method directly modifies self.network in-place.
         Hence, after calling this method, self.network corresponds to a new posterior sample.
         """
-
         # Instead of acting on a full vector of parameters, all operations can be done on per-layer parameters.
         for name, param in self.network.named_parameters():
             # SWAG-diagonal part
-            z_1 = torch.randn(param.size())
+            #z_1 = torch.randn(param.size()) #replaced in 388
             # TODO(1): Sample parameter values for SWAG-diagonal
-            raise NotImplementedError("Sample parameter for SWAG-diagonal")
-            current_mean = ...
-            current_std = ...
-            assert current_mean.size() == param.size() and current_std.size() == param.size()
+            #raise NotImplementedError("Sample parameter for SWAG-diagonal")
 
+            current_mean = self.weights[name]/self.swag_epochs
+
+            theta_sq_avg = self.weights_squared[name]/self.swag_epochs
+            current_std = torch.sqrt(torch.abs(theta_sq_avg - current_mean**2))
+            assert current_mean.size() == param.size() and current_std.size() == param.size()
             # Diagonal part
-            sampled_param = current_mean + current_std * z_1
+            #sampled_param = current_mean + current_std * z_1 #replaced in 388
+            sampled_param = torch.normal(mean=current_mean, std=current_std)
+
+            self._update_batchnorm()
 
             # Full SWAG part
             if self.inference_mode == InferenceMode.SWAG_FULL:
@@ -371,8 +408,9 @@ class SWAGInference(object):
 
         # TODO(1): Don't forget to update batch normalization statistics using self._update_batchnorm()
         #  in the appropriate place!
-        raise NotImplementedError("Update batch normalization statistics for newly sampled network")
-
+        #raise NotImplementedError("Update batch normalization statistics for newly sampled network")
+        
+        
     def predict_labels(self, predicted_probabilities: torch.Tensor) -> torch.Tensor:
         """
         Predict labels in {0, 1, 2, 3, 4, 5} or "don't know" as -1
