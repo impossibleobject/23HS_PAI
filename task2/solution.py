@@ -117,14 +117,14 @@ class SWAGInference(object):
         model_dir: pathlib.Path,
         # TODO(1): change inference_mode to InferenceMode.SWAG_DIAGONAL
         # TODO(2): change inference_mode to InferenceMode.SWAG_FULL
-        inference_mode: InferenceMode = InferenceMode.SWAG_DIAGONAL,
+        inference_mode: InferenceMode = InferenceMode.SWAG_FULL,
         # TODO(2): optionally add/tweak hyperparameters
-        swag_epochs: int = 30, #30
+        swag_epochs: int = 2, #30
         swag_learning_rate: float = 0.045,
         swag_update_freq: int = 1,
         deviation_matrix_max_rank: int = 15,
-        bma_samples: int = 30, #30
-        K: int= 3, 
+        bma_samples: int = 2, #30
+        K: int= 2, 
     ):
         """
         :param train_xs: Training images (for storage only)
@@ -144,7 +144,7 @@ class SWAGInference(object):
         self.swag_update_freq = swag_update_freq
         self.deviation_matrix_max_rank = deviation_matrix_max_rank
         self.bma_samples = bma_samples
-        self.k = K 
+        self.K = K 
 
         # Network used to perform SWAG.
         # Note that all operations in this class modify this network IN-PLACE!
@@ -203,18 +203,18 @@ class SWAGInference(object):
             # TODO(2): update full SWAG attributes for weight `name` using `current_params` and `param`
             #raise NotImplementedError("Update full SWAG statistics")
             #L: get current params
-            params = current_params.values().detach()
+            params = current_params.values()
             self.theta_is.append(params)
 
             #L: get running avg
             curr_iter = len(self.theta_is)
-            theta_sum_i = params
+            theta_sum_i = np.array(list(params))
             for i in range(curr_iter-1): #-1 since first element is already added in line above
                 j=0
                 for p in self.theta_is[i]:
                     theta_sum_i[j] += p
                     j+=1
-            self.theta_dash_is.append(theta_sum_i / curr_iter)
+            self.theta_dash_is.append(theta_sum_i / float(curr_iter))
 
             #L: get D_i
             self.D_i.append(self.theta_is[-1] - self.theta_dash_is[-1])
@@ -434,7 +434,14 @@ class SWAGInference(object):
             if self.inference_mode == InferenceMode.SWAG_FULL:
                 # TODO(2): Sample parameter values for full SWAG
                 #raise NotImplementedError("Sample parameter for full SWAG")
-                sampled_param += ...
+                D_is_used = []
+                for _ in range(self.K):
+                    D_is_used.append(self.D_i.pop())
+                D_hat = torch.hstack(D_is_used)     #makes of list of single entries which represent columns a full matrix
+                Sigma_low_rank = 1/(self.K-1) * D_hat * torch.transpose(D_hat)
+                
+                sampled_param = torch.normal(mean=current_mean, std=0.5*(current_std+Sigma_low_rank))
+                #sampled_param += ...
 
             # Modify weight value in-place; directly changing self.network
             param.data = sampled_param
