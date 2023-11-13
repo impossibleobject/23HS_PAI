@@ -121,7 +121,7 @@ class SWAGInference(object):
         swag_learning_rate: float = 0.045,
         swag_update_freq: int = 1,
         deviation_matrix_max_rank: int = 15,
-        bma_samples: int = 30,
+        bma_samples: int = 2, #30
     ):
         """
         :param train_xs: Training images (for storage only)
@@ -341,25 +341,69 @@ class SWAGInference(object):
             #raise NotImplementedError("Sample network parameters")
             with torch.inference_mode():
                 self.sample_parameters()
-                prob = 1
+                prob = torch.Tensor(1)
                 for name, param in self.network.named_parameters():
-                    print(param.shape)
+                    print(name)
+                    print(param.shape, "param shape")
                     mean = self.weights[name] / self.swag_epochs
                     theta_sq_avg = self.weights_squared[name]/self.swag_epochs
-                    print(theta_sq_avg.size())
-                    current_std = torch.sqrt(torch.abs(theta_sq_avg- mean**2))
+                    #print(theta_sq_avg.size(), "torch theta sq size")
+                    
+                    use_cov = True
+                    if use_cov:
+                        current_std = torch.abs(theta_sq_avg- mean**2)
+                    else:
+                        current_std = torch.sqrt(torch.abs(theta_sq_avg- mean**2))
 
-                    dist = torch.distributions.Normal(loc = mean, scale = current_std)
-                    prob *= torch.exp(dist.log_prob(param))
-                    print(prob)
+                    current_std += 0.0001 #offset to prevent violation of >= zero constraint for scale, not sure how violated without
+                    current_std = current_std.view(-1)
+                    
+                    # print(f"current cov: {current_std.shape}")
+                    mean = mean.view(-1)
+                    #print(f"mean: {mean.shape}")
+                     
+                    #print(f"std param: {current_std}")
+                    
+                    #print(f"torch diag shape: {torch.diag(current_cov).shape}")
+                    
+                    param = param.view(-1)
+
+                    
+                    #print(f"std shape: {current_std.shape}")
+                    #print(f"mean shape: {mean.shape}")
+                    #dist = torch.distributions.Normal(loc = mean, scale = current_std)
+                    dist = torch.distributions.MultivariateNormal(mean, torch.diag(current_std))
+                    log_prob= dist.log_prob(param)
+                    #print(f"log prob before item: {log_prob}")
+                    #log_prob= log_prob.item()
+                    #print(f"log prob after item: {log_prob}")
+                    
+                    prob= torch.exp(torch.tensor(log_prob))
+                    #print(f"prob after item : {prob.item()}")
+                    #print(f"prob shape after item: {prob.shape}")
+                    
+                    dist_prob = torch.exp(torch.tensor(dist.log_prob(param).item())) # after log.prob.item() to get the log prob and not a pdf
+                    print(f"probability: {dist_prob}")
+                    #dist_prob= (dist_prob)
+                    print(f"distprob shape: {dist_prob.shape}")
+                    print(dist_prob)
+                    prob *= dist_prob
+                    print()
+
+                    #print(prob, "probabilit")
                 #probabilities.append(prob)
                 # TODO(1): Perform inference for all samples in `loader` using current model sample,
                 #  and add the predictions to per_model_sample_predictions
                 #raise NotImplementedError("Perform inference using current model")
                 prediction = []
                 for (batch_xs,) in loader:
-                    prediction.append(self.network(batch_xs))
+                    p = self.network(batch_xs)
+                    print(f"pred shape: {p.shape}")
+                    prediction.append(p)
+                print(f"torch CAT pred shape: {torch.cat(prediction).shape}")
                 per_model_sample_predictions.append(prob*torch.cat(prediction))
+                
+                
 
         assert len(per_model_sample_predictions) == self.bma_samples
         assert all(
