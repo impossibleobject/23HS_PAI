@@ -19,6 +19,8 @@ from util import draw_reliability_diagram, cost_function, setup_seeds, calc_cali
 
 import random
 
+# print(torch.cuda.get_device_name(torch.device("cuda")))
+# exit()
 EXTENDED_EVALUATION = False
 """
 Set `EXTENDED_EVALUATION` to `True` in order to generate additional plots on validation data.
@@ -119,12 +121,12 @@ class SWAGInference(object):
         # TODO(2): change inference_mode to InferenceMode.SWAG_FULL
         inference_mode: InferenceMode = InferenceMode.SWAG_FULL,
         # TODO(2): optionally add/tweak hyperparameters
-        swag_epochs: int = 30, #30
+        swag_epochs: int = 100, #30
         swag_learning_rate: float = 0.045,
         swag_update_freq: int = 1,
         deviation_matrix_max_rank: int = 15,
         bma_samples: int = 30, #30
-        K: int= 15, 
+        K: int = 11, 
     ):
         """
         :param train_xs: Training images (for storage only)
@@ -179,11 +181,11 @@ class SWAGInference(object):
         self.curr_iter = 0
         
         
-    def predict(self, xs):
+    # def predict(self, xs):
 
-        # Calibration, prediction, and other attributes
-        # TODO(2): create additional attributes, e.g., for calibration
-        self._prediction_threshold = None  # this is example, feel free to be creative
+    #     # Calibration, prediction, and other attributes
+    #     # TODO(2): create additional attributes, e.g., for calibration
+    #     self._prediction_threshold = None  # this is example, feel free to be creative
 
     def update_swag(self) -> None:
         """
@@ -370,6 +372,7 @@ class SWAGInference(object):
         For simplicity, this method directly modifies self.network in-place.
         Hence, after calling this method, self.network corresponds to a new posterior sample.
         """
+        z2 = torch.normal(mean=torch.zeros(self.K), std=torch.ones(self.K))
         # Instead of acting on a full vector of parameters, all operations can be done on per-layer parameters.
         for name, param in self.network.named_parameters():
             # SWAG-diagonal part
@@ -400,7 +403,7 @@ class SWAGInference(object):
                 assert Dhat.shape == (d[0], self.K) #test shape of matrix
         
                 z1 = torch.normal(mean=torch.zeros(d), std=torch.ones(d[0]))      #C: might specify the shapes for zeros better
-                z2 = torch.normal(mean=torch.zeros(self.K), std=torch.ones(self.K))
+                
                 theta_approx = theta_SWA #term1, d vector
                 theta_approx += 1/np.sqrt(2) * (Sigma_Diag_Sqrt @ z1) #term2, dxd matrix x d vector -> d vector
                 theta_approx += 1/np.sqrt(2*(self.K-1)) * (Dhat @ z2) #term3, dxK matrix x K vector -> d vector
