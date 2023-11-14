@@ -119,11 +119,11 @@ class SWAGInference(object):
         # TODO(2): change inference_mode to InferenceMode.SWAG_FULL
         inference_mode: InferenceMode = InferenceMode.SWAG_FULL,
         # TODO(2): optionally add/tweak hyperparameters
-        swag_epochs: int = 2, #30
+        swag_epochs: int = 30, #30
         swag_learning_rate: float = 0.045,
         swag_update_freq: int = 1,
         deviation_matrix_max_rank: int = 15,
-        bma_samples: int = 2, #30
+        bma_samples: int = 30, #30
         K: int= 2, 
     ):
         """
@@ -171,9 +171,13 @@ class SWAGInference(object):
         #L: other params: running average theta_dash_i
         #C: need to make a running estimate for i weights we use -> D_i = theta_i - theta_dash_i
         #C: K is the last epochs of training 
-        self.theta_is = []
-        self.theta_dash_is = []
-        self.D_i = collections.deque([])
+        self.theta_dash_i = self._create_weight_copy()
+        self.theta_dash_i_squared = self._create_weight_copy()
+
+        self.Dhat = {
+            name: collections.deque([]) for name in self.weights.keys()
+            }
+        self.curr_iter = 0
         
         
     def predict(self, xs):
@@ -202,23 +206,43 @@ class SWAGInference(object):
         if self.inference_mode == InferenceMode.SWAG_FULL:
             # TODO(2): update full SWAG attributes for weight `name` using `current_params` and `param`
             #raise NotImplementedError("Update full SWAG statistics")
-            #L: get current params
-            params = current_params.values()
-            self.theta_is.append(params)
+            
+            # TODO(3) unsure if the n is correct
+            n = self.curr_iter / self.swag_update_freq 
+            for name, param in current_params.items():
+                # D_curr is the queue for the current param vec. At the end it
+                # is supposed to be a len(theta_i) X self.K matrix
+                theta_dash_curr = self.theta_dash_i[name]
+                theta_dash_sq_curr = self.theta_dash_i_squared[name]
+                # Take current weights
+                theta_i = param
+                self.theta_dash_i[name] = (n*theta_dash_curr + theta_i)/(n+1)
+                theta_i_sq = param**2
+                self.theta_dash_i_squared[name] = (n*theta_dash_sq_curr + theta_i_sq)/(n+1)
 
-            #L: get running avg
-            curr_iter = len(self.theta_is)
-            theta_sum_i = np.array(list(params))
-            for i in range(curr_iter-1): #-1 since first element is already added in line above
-                j=0
-                for p in self.theta_is[i]:
-                    theta_sum_i[j] += p
-                    j+=1
-            self.theta_dash_is.append(theta_sum_i / float(curr_iter))
+                if len(self.Dhat[name]) == self.K:
+                    self.Dhat[name].popleft()
+                
+                D_i = theta_i - theta_dash_curr
+                self.Dhat[name].append(D_i)
+            
+            self.curr_iter += 1
 
-            #L: get D_i
-            self.D_i.append(self.theta_is[-1] - self.theta_dash_is[-1])
 
+            '''#L: get running avg and D_i
+            n = self.curr_iter / self.swag_update_freq 
+            D_i = self._create_weight_copy()
+            for name in current_params.keys():
+                self.theta_dash_i[name] = (n*self.theta_dash_i[name] + self.theta_i[name])/(n+1)
+                D_i[name] = self.theta_dash_i[name] - self.theta_i[name]
+            
+            #L: cut away earlier columns of D
+            if len(self.Dhat) == self.K:
+                self.Dhat.popleft()
+
+            self.Dhat.append(D_i)
+
+            self.curr_iter += 1'''
 
 
     def fit_swag(self, loader: torch.utils.data.DataLoader) -> None:
@@ -373,20 +397,15 @@ class SWAGInference(object):
             #raise NotImplementedError("Sample network parameters")
             with torch.inference_mode():
                 self.sample_parameters()
-                
 
-                    #print(prob, "probabilit")
-                #probabilities.append(prob)
-            # TODO(1): Perform inference for all samples in `loader` using current model sample,
-            #  and add the predictions to per_model_sample_predictions
-            #raise NotImplementedError("Perform inference using current model")
-            predictions = self.predict_probabilities_map(loader)
-            #print(f"prob pred netw {i}: {predictions}")
-            #print(f"sum prob pred {i}: {torch.sum(predictions, 1)}")
-            per_model_sample_predictions.append(predictions)
+                # TODO(1): Perform inference for all samples in `loader` using current model sample,
+                #  and add the predictions to per_model_sample_predictions
+                #raise NotImplementedError("Perform inference using current model")
+                predictions = self.predict_probabilities_map(loader)
+                #print(f"prob pred netw {i}: {predictions}")
+                #print(f"sum prob pred {i}: {torch.sum(predictions, 1)}")
+                per_model_sample_predictions.append(predictions)
                 
-                
-
         assert len(per_model_sample_predictions) == self.bma_samples
         assert all(
             isinstance(model_sample_predictions, torch.Tensor)
@@ -415,37 +434,58 @@ class SWAGInference(object):
             #z_1 = torch.randn(param.size()) #replaced in 388
             # TODO(1): Sample parameter values for SWAG-diagonal
             #raise NotImplementedError("Sample parameter for SWAG-diagonal")
+            param_flat = param.flatten()
+            d = param_flat.size() #number of params
+            #L: from here on EVERYTHING is FLAT
 
-            current_mean = self.weights[name]/self.swag_epochs
-
-            theta_sq_avg = self.weights_squared[name]/self.swag_epochs
-            current_std = torch.sqrt(torch.abs(theta_sq_avg - current_mean**2))
-            assert current_mean.size() == param.size() and current_std.size() == param.size()
             # Diagonal part
-            #sampled_param = current_mean + current_std * z_1 #replaced in 388
-            sampled_param = torch.normal(mean=current_mean, std=current_std)
+            theta_SWA = self.weights[name].flatten()/self.swag_epochs #d vector
 
-            #own test
-            assert(sampled_param.size() == param.size())
+            theta_sq_avg = self.weights_squared[name].flatten()/self.swag_epochs #d vector
+            
+            Sigma_Diag_vec = torch.abs(theta_sq_avg - theta_SWA**2) #d vector
+            Sigma_Diag_Sqrt = torch.diag(torch.sqrt(Sigma_Diag_vec)) #dxd matrix
+            assert theta_SWA.size() == d and Sigma_Diag_vec.size() == d
+            
+            sampled_param = torch.normal(mean=theta_SWA, std=Sigma_Diag_Sqrt) #d vector
+                
 
-            self._update_batchnorm()
+            #self._update_batchnorm() #for easy baseline
 
             # Full SWAG part
             if self.inference_mode == InferenceMode.SWAG_FULL:
                 # TODO(2): Sample parameter values for full SWAG
                 #raise NotImplementedError("Sample parameter for full SWAG")
-                D_is_used = []
-                for _ in range(self.K):
-                    D_is_used.append(self.D_i.pop())
-                D_hat = torch.hstack(D_is_used)     #makes of list of single entries which represent columns a full matrix
-                Sigma_low_rank = 1/(self.K-1) * D_hat * torch.transpose(D_hat)
+                #L: shape of Dhat per name: Dhat [dxK] * z2[K] -> d shape -> what we want
+                Dhat_dq = self.Dhat[name]
+                Dhat_l = [D_i.flatten() for D_i in list(Dhat_dq)]      
+                Dhat = torch.vstack(Dhat_l).T
                 
-                sampled_param = torch.normal(mean=current_mean, std=0.5*(current_std+Sigma_low_rank))
-                #sampled_param += ...
+                assert Dhat.shape == (d[0], self.K) #test shape of matrix
+        
+                z1 = torch.normal(mean=torch.zeros(d), std=torch.ones(d[0]))      #C: might specify the shapes for zeros better
+                z2 = torch.normal(mean=torch.zeros(self.K), std=torch.ones(self.K))
+                theta_approx = theta_SWA #term1, d vector
+                theta_approx += 1/np.sqrt(2) * (Sigma_Diag_Sqrt @ z1) #term2, dxd matrix x d vector -> d vector
+                theta_approx += 1/np.sqrt(2*(self.K-1)) * (Dhat @ z2) #term3, dxK matrix x K vector -> d vector
+                theta_approx = torch.reshape(theta_approx, param.size())
+
+                assert(theta_approx.size() == param.size())
+                
+                sampled_param = theta_approx
+                #sampled_param += ... #whyyyy
 
             # Modify weight value in-place; directly changing self.network
+            
             param.data = sampled_param
 
+                        
+
+        self._update_batchnorm()    #check again maybe, müsste so stimmen aber 
+
+        
+        
+        
         # TODO(1): Don't forget to update batch normalization statistics using self._update_batchnorm()
         #  in the appropriate place!
         #raise NotImplementedError("Update batch normalization statistics for newly sampled network")
