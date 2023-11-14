@@ -227,22 +227,6 @@ class SWAGInference(object):
             self.curr_iter += 1
 
 
-            '''#L: get running avg and D_i
-            n = self.curr_iter / self.swag_update_freq 
-            D_i = self._create_weight_copy()
-            for name in current_params.keys():
-                self.theta_dash_i[name] = (n*self.theta_dash_i[name] + self.theta_i[name])/(n+1)
-                D_i[name] = self.theta_dash_i[name] - self.theta_i[name]
-            
-            #L: cut away earlier columns of D
-            if len(self.Dhat) == self.K:
-                self.Dhat.popleft()
-
-            self.Dhat.append(D_i)
-
-            self.curr_iter += 1'''
-
-
     def fit_swag(self, loader: torch.utils.data.DataLoader) -> None:
         """
         Fit SWAG on top of the pretrained network self.network.
@@ -333,46 +317,7 @@ class SWAGInference(object):
         assert val_ys.size() == (140,)
         assert val_is_snow.size() == (140,)
         assert val_is_cloud.size() == (140,)
-    SHAPES_DICT = typing.Dict[
-            str,
-            typing.Tuple[
-                int,
-                int,
-                typing.List[int]]]
-    def __flatten_dict(self, input_dict: typing.Dict[str, torch.Tensor]) -> typing.Tuple[
-        torch.Tensor,
-        typing.Dict[
-            str,
-            typing.Tuple[
-                int,
-                int,
-                typing.List[int]]]]:
-        '''This function gets a dict of paramters and flattens them into a one dimensional tensor. Shape contains the names of the parameter and which range in the tensor contains it.'''
-        tensors = []
-        shapes = {}
-        counter = 0
-        for param_name, param_values in input_dict.items():
-            flat_params = param_values.flatten()
-            tensors.append(flat_params)
-            shapes[param_name] = (counter, counter + flat_params.shape[0], param_values.shape)
-            counter += flat_params.shape[0]
 
-        return torch.cat(tensors), shapes
-    
-    def __unflatten_dict(self, input_tensor: torch.Tensor, shapes: typing.Dict[
-            str,
-            typing.Tuple[
-                int,
-                int,
-                typing.List[int]]]) -> typing.Dict[str, torch.Tensor]:
-        '''Takes a tensor flattened by __flatten_dict as well as the returned shape and returns it back to the original shape specified by shapes (which is returned by __flatten_dict).'''
-        return {
-            name: input_tensor[start:end].unflatten(0, shape)
-            for name, (start, end), shape in shapes.items()
-            }
-    
-
-    
     def predict_probabilities_swag(self, loader: torch.utils.data.DataLoader) -> torch.Tensor:
         """
         Perform Bayesian model averaging using your SWAG statistics and predict
@@ -414,7 +359,6 @@ class SWAGInference(object):
         
         # TODO(1): Average predictions from different model samples into bma_probabilities
         #raise NotImplementedError("Aggregate predictions from model samples")
-        print(per_model_sample_predictions)
         bma_probabilities = torch.mean(torch.stack(per_model_sample_predictions,dim=0), dim=0)
 
         assert bma_probabilities.dim() == 2 and bma_probabilities.size(1) == 6  # N x C
@@ -471,9 +415,6 @@ class SWAGInference(object):
             param.data = sampled_param        
 
         self._update_batchnorm()    #check again maybe, müsste so stimmen aber 
-
-        
-        
         
         # TODO(1): Don't forget to update batch normalization statistics using self._update_batchnorm()
         #  in the appropriate place!
