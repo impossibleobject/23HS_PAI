@@ -71,7 +71,7 @@ def main():
         dataset_train,
         batch_size=16,
         shuffle=True,
-        num_workers=0,
+        num_workers=10,
     )
     swag = SWAGInference(
         train_xs=dataset_train.tensors[0],
@@ -124,7 +124,7 @@ class SWAGInference(object):
         swag_update_freq: int = 1,
         deviation_matrix_max_rank: int = 15,
         bma_samples: int = 30, #30
-        K: int= 10, 
+        K: int= 15, 
     ):
         """
         :param train_xs: Training images (for storage only)
