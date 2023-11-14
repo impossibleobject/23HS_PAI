@@ -19,8 +19,7 @@ from util import draw_reliability_diagram, cost_function, setup_seeds, calc_cali
 
 import random
 
-# print(torch.cuda.get_device_name(torch.device("cuda")))
-# exit()
+
 EXTENDED_EVALUATION = False
 """
 Set `EXTENDED_EVALUATION` to `True` in order to generate additional plots on validation data.
@@ -121,7 +120,7 @@ class SWAGInference(object):
         # TODO(2): change inference_mode to InferenceMode.SWAG_FULL
         inference_mode: InferenceMode = InferenceMode.SWAG_FULL,
         # TODO(2): optionally add/tweak hyperparameters
-        swag_epochs: int = 100, #30
+        swag_epochs: int = 30, #30
         swag_learning_rate: float = 0.045,
         swag_update_freq: int = 1,
         deviation_matrix_max_rank: int = 15,
@@ -179,7 +178,6 @@ class SWAGInference(object):
             name: collections.deque([]) for name in self.weights.keys()
             }
         self.curr_iter = 0
-        
         
     # def predict(self, xs):
 
