@@ -124,7 +124,7 @@ class SWAGInference(object):
         swag_update_freq: int = 1,
         deviation_matrix_max_rank: int = 15,
         bma_samples: int = 30, #30
-        K: int= 2, 
+        K: int= 10, 
     ):
         """
         :param train_xs: Training images (for storage only)
@@ -161,7 +161,6 @@ class SWAGInference(object):
         #  but can always act on per-layer weights (in the format that _create_weight_copy() returns)
         self.weights = self._create_weight_copy()
         self.weights_squared = self._create_weight_copy()
-        #print(self.weights)
 
 
         # Full SWAG
@@ -207,15 +206,14 @@ class SWAGInference(object):
             # TODO(2): update full SWAG attributes for weight `name` using `current_params` and `param`
             #raise NotImplementedError("Update full SWAG statistics")
             
-            # TODO(3) unsure if the n is correct
             n = self.curr_iter / self.swag_update_freq 
             for name, param in current_params.items():
-                # D_curr is the queue for the current param vec. At the end it
-                # is supposed to be a len(theta_i) X self.K matrix
+                #extract attributes for current name / set for current weights
                 theta_dash_curr = self.theta_dash_i[name]
                 theta_dash_sq_curr = self.theta_dash_i_squared[name]
-                # Take current weights
                 theta_i = param
+
+                #update according to pseudocode update rules
                 self.theta_dash_i[name] = (n*theta_dash_curr + theta_i)/(n+1)
                 theta_i_sq = param**2
                 self.theta_dash_i_squared[name] = (n*theta_dash_sq_curr + theta_i_sq)/(n+1)
@@ -431,16 +429,13 @@ class SWAGInference(object):
         # Instead of acting on a full vector of parameters, all operations can be done on per-layer parameters.
         for name, param in self.network.named_parameters():
             # SWAG-diagonal part
-            #z_1 = torch.randn(param.size()) #replaced in 388
             # TODO(1): Sample parameter values for SWAG-diagonal
             #raise NotImplementedError("Sample parameter for SWAG-diagonal")
             param_flat = param.flatten()
             d = param_flat.size() #number of params
             #L: from here on EVERYTHING is FLAT
 
-            # Diagonal part
             theta_SWA = self.weights[name].flatten()/self.swag_epochs #d vector
-
             theta_sq_avg = self.weights_squared[name].flatten()/self.swag_epochs #d vector
             
             Sigma_Diag_vec = torch.abs(theta_sq_avg - theta_SWA**2) #d vector
@@ -448,8 +443,6 @@ class SWAGInference(object):
             assert theta_SWA.size() == d and Sigma_Diag_vec.size() == d
             
             sampled_param = torch.normal(mean=theta_SWA, std=Sigma_Diag_Sqrt) #d vector
-                
-
             #self._update_batchnorm() #for easy baseline
 
             # Full SWAG part
@@ -460,7 +453,6 @@ class SWAGInference(object):
                 Dhat_dq = self.Dhat[name]
                 Dhat_l = [D_i.flatten() for D_i in list(Dhat_dq)]      
                 Dhat = torch.vstack(Dhat_l).T
-                
                 assert Dhat.shape == (d[0], self.K) #test shape of matrix
         
                 z1 = torch.normal(mean=torch.zeros(d), std=torch.ones(d[0]))      #C: might specify the shapes for zeros better
@@ -469,7 +461,6 @@ class SWAGInference(object):
                 theta_approx += 1/np.sqrt(2) * (Sigma_Diag_Sqrt @ z1) #term2, dxd matrix x d vector -> d vector
                 theta_approx += 1/np.sqrt(2*(self.K-1)) * (Dhat @ z2) #term3, dxK matrix x K vector -> d vector
                 theta_approx = torch.reshape(theta_approx, param.size())
-
                 assert(theta_approx.size() == param.size())
                 
                 sampled_param = theta_approx
@@ -477,9 +468,7 @@ class SWAGInference(object):
 
             # Modify weight value in-place; directly changing self.network
             
-            param.data = sampled_param
-
-                        
+            param.data = sampled_param        
 
         self._update_batchnorm()    #check again maybe, müsste so stimmen aber 
 
