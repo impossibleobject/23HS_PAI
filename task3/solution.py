@@ -95,6 +95,9 @@ class BO_algo():
             SA constraint func
         """
         # TODO: Add the observed data {x, f, v} to your model.
+        print(type(x[0]))
+        print(type(f[0]))
+        print(type(v[0]))
         raise NotImplementedError
 
     def get_solution(self):
