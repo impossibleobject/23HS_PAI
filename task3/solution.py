@@ -87,12 +87,16 @@ class BO_algo():
             shape (N, 1)
             Value of the acquisition function at x
         """
-        x = np.atleast_2d(x)
+        #x = np.atleast_2d(x)
         # TODO: Implement the acquisition function you want to optimize.
         #raise NotImplementedError
         f_mean, f_std = self.f_gpr.predict(x, return_std=True)
         v_mean, v_std = self.v_gpr.predict(x, return_std=True)
-        return f_std
+        def under_threshold(means, stds):
+            return (means+stds)<=SAFETY_THRESHOLD
+        #get maximum value in x under safety threshold kappa
+        x = np.argmax((f_mean+f_std)[under_threshold[v_mean, v_std]])
+        return x
          
 
 
@@ -212,4 +216,11 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    #main()
+    vs = [1,1,1,5,1,6]
+    fs = [6,5,2,7,10,0]
+    xs = [1,2,3,4,5,6]
+    agent = BO_algo()
+    agent.add_data_point(xs,fs,vs)
+    print(agent.acquisition_function(xs))
+
