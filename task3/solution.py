@@ -2,7 +2,8 @@
 import numpy as np
 from scipy.optimize import fmin_l_bfgs_b
 # import additional ...
-
+from sklearn.gaussian_process import GaussianProcessRegressor
+from sklearn.gaussian_process.kernels import Matern, RBF, DotProduct
 
 # global variables
 DOMAIN = np.array([[0, 10]])  # restrict \theta in [0, 10]
@@ -15,7 +16,16 @@ class BO_algo():
     def __init__(self):
         """Initializes the algorithm with a parameter configuration."""
         # TODO: Define all relevant class members for your BO algorithm here.
-        pass
+        #pass
+        self.xs = np.array([])
+        self.fs = np.array([])
+        self.vs = np.array([])
+
+
+        f_kernel = Matern(nu=2.5, length_scale=1)
+        self.f_gpr = GaussianProcessRegressor(f_kernel)
+        v_kernel = DotProduct(sigma_0=0) + Matern(nu=2.5, length_scale=1)
+        self.v_gpr = GaussianProcessRegressor(v_kernel)
 
     def next_recommendation(self):
         """
@@ -79,7 +89,12 @@ class BO_algo():
         """
         x = np.atleast_2d(x)
         # TODO: Implement the acquisition function you want to optimize.
-        raise NotImplementedError
+        #raise NotImplementedError
+        f_mean, f_std = self.f_gpr.predict(x, return_std=True)
+        v_mean, v_std = self.v_gpr.predict(x, return_std=True)
+        return f_std
+         
+
 
     def add_data_point(self, x: float, f: float, v: float):
         """
@@ -95,10 +110,11 @@ class BO_algo():
             SA constraint func
         """
         # TODO: Add the observed data {x, f, v} to your model.
-        print(type(x[0]))
-        print(type(f[0]))
-        print(type(v[0]))
-        raise NotImplementedError
+        #raise NotImplementedError
+        self.xs = np.concatenate([self.xs, x])
+        self.fs = np.concatenate([self.fs, f])
+        self.vs = np.concatenate([self.vs, v])
+        
 
     def get_solution(self):
         """
