@@ -23,12 +23,13 @@ class BO_algo():
         self.vs = np.empty((1, 1))
         self.afs = np.array([])
         self.domain = np.atleast_2d(np.linspace(DOMAIN[0, 0], DOMAIN[0, 1], num=10000)).T
+        self.lb = 1e-1 #lambda penalty scaler for unsafe evaluations
 
-
+        self.unsafe_tries = 0 #counter for unsafe tries where v > SAFETY_THRESHOLD
         f_kernel = Matern(nu=2.5, length_scale=1)
-        self.f_gpr = GaussianProcessRegressor(f_kernel, n_restarts_optimizer=20)
+        self.f_gpr = GaussianProcessRegressor(f_kernel, n_restarts_optimizer=20, alpha=0.15)
         v_kernel = DotProduct(sigma_0=0) + Matern(nu=2.5, length_scale=1)
-        self.v_gpr = GaussianProcessRegressor(v_kernel, n_restarts_optimizer=20)
+        self.v_gpr = GaussianProcessRegressor(v_kernel, n_restarts_optimizer=20, alpha=0.0001)
 
     def next_recommendation(self):
         """
@@ -44,6 +45,7 @@ class BO_algo():
         # In implementing this function, you may use
         # optimize_acquisition_function() defined below.
 
+        # Chris: implement our sampler algo here
         #raise NotImplementedError
 
         x_opt = self.optimize_acquisition_function() #get the optimal next x
@@ -104,12 +106,12 @@ class BO_algo():
         
         f_mean, f_std = self.f_gpr.predict(x, return_std=True)
         #self.v_gpr = self.v_gpr.fit(self.xs, self.vs)
-        #v_mean, v_std = self.v_gpr.predict(x, return_std=True)
+        v_mean, v_std = self.v_gpr.predict(x, return_std=True)
         def under_threshold(means, stds):
             return (means+stds)<=SAFETY_THRESHOLD
         #get maximum value in x under safety threshold kappa
         #x = np.argsort(()) #[under_threshold[v_mean, v_std]]
-        return f_mean+f_std
+        return (f_mean+f_std) - self.lb * np.max(v_mean + v_std, 0) #
 
 
     def add_data_point(self, x: float, f: float, v: float):
@@ -157,7 +159,7 @@ class BO_algo():
 
         # Set all invalid predicitons to the worst value so we can take the 
         # maximum index later. This simplifies the handling.
-        f_predictions[invalid_preds] = np.min(f_predictions)
+        f_predictions[invalid_preds] = np.min(f_predictions) # Chris: easy baseline push/ prev best: self.lb= 1e-1 and using np.min(f_predictions)
 
         # Get the index of the maximum, i.e. the index of the optimal x in our
         # domain. The invalid predictions will always perform worse than the
