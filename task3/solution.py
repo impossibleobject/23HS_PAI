@@ -17,15 +17,18 @@ class BO_algo():
         """Initializes the algorithm with a parameter configuration."""
         # TODO: Define all relevant class members for your BO algorithm here.
         #pass
-        self.xs = np.array([])
-        self.fs = np.array([])
-        self.vs = np.array([])
+        #4 arrays of same size storing xs, fs, vs and acquisition function values af
+        self.xs = np.empty((1, 1))
+        self.fs = np.empty((1, 1))
+        self.vs = np.empty((1, 1))
+        self.afs = np.array([])
+        self.domain = np.atleast_2d(np.linspace(DOMAIN[0, 0], DOMAIN[0, 1], num=10000)).T
 
 
         f_kernel = Matern(nu=2.5, length_scale=1)
-        self.f_gpr = GaussianProcessRegressor(f_kernel)
+        self.f_gpr = GaussianProcessRegressor(f_kernel, n_restarts_optimizer=20)
         v_kernel = DotProduct(sigma_0=0) + Matern(nu=2.5, length_scale=1)
-        self.v_gpr = GaussianProcessRegressor(v_kernel)
+        self.v_gpr = GaussianProcessRegressor(v_kernel, n_restarts_optimizer=20)
 
     def next_recommendation(self):
         """
@@ -41,7 +44,15 @@ class BO_algo():
         # In implementing this function, you may use
         # optimize_acquisition_function() defined below.
 
-        raise NotImplementedError
+        #raise NotImplementedError
+
+        x_opt = self.optimize_acquisition_function() #get the optimal next x
+
+        # TODO: (simon says) Maybe insert check for if v is within the safety 
+        # bounds.
+        recommendation = x_opt
+
+        return recommendation
 
     def optimize_acquisition_function(self):
         """Optimizes the acquisition function defined below (DO NOT MODIFY).
@@ -87,17 +98,18 @@ class BO_algo():
             shape (N, 1)
             Value of the acquisition function at x
         """
-        #x = np.atleast_2d(x)
+        x = np.atleast_2d(x)
         # TODO: Implement the acquisition function you want to optimize.
         #raise NotImplementedError
+        
         f_mean, f_std = self.f_gpr.predict(x, return_std=True)
-        v_mean, v_std = self.v_gpr.predict(x, return_std=True)
+        #self.v_gpr = self.v_gpr.fit(self.xs, self.vs)
+        #v_mean, v_std = self.v_gpr.predict(x, return_std=True)
         def under_threshold(means, stds):
             return (means+stds)<=SAFETY_THRESHOLD
         #get maximum value in x under safety threshold kappa
-        x = np.argmax((f_mean+f_std)[under_threshold[v_mean, v_std]])
-        return x
-         
+        #x = np.argsort(()) #[under_threshold[v_mean, v_std]]
+        return f_mean+f_std
 
 
     def add_data_point(self, x: float, f: float, v: float):
@@ -115,9 +127,13 @@ class BO_algo():
         """
         # TODO: Add the observed data {x, f, v} to your model.
         #raise NotImplementedError
-        self.xs = np.concatenate([self.xs, x])
-        self.fs = np.concatenate([self.fs, f])
-        self.vs = np.concatenate([self.vs, v])
+        self.xs = np.vstack((self.xs, (x,)))
+
+        self.fs = np.concatenate([self.fs, (f,)])
+        self.vs = np.concatenate([self.vs, (v,)])
+        #retrain
+        self.f_gpr = self.f_gpr.fit(self.xs, self.fs)
+        self.v_gpr = self.v_gpr.fit(self.xs, self.vs)
         
 
     def get_solution(self):
@@ -130,7 +146,27 @@ class BO_algo():
             the optimal solution of the problem
         """
         # TODO: Return your predicted safe optimum of f.
-        raise NotImplementedError
+        #raise NotImplementedError
+        
+        # Compute the predicitions
+        f_predictions = self.f_gpr.predict(self.domain)
+        v_predictions = self.v_gpr.predict(self.domain)
+        
+        # Select which preditions are (probably) within our safety threshold
+        invalid_preds = v_predictions > SAFETY_THRESHOLD
+
+        # Set all invalid predicitons to the worst value so we can take the 
+        # maximum index later. This simplifies the handling.
+        f_predictions[invalid_preds] = np.min(f_predictions)
+
+        # Get the index of the maximum, i.e. the index of the optimal x in our
+        # domain. The invalid predictions will always perform worse than the
+        # valid ones due to our check above.
+        index_opt = np.argmax(f_predictions)
+
+        x_opt = self.domain[index_opt]
+        
+        return x_opt
 
     def plot(self, plot_recommendation: bool = True):
         """Plot objective and constraint posterior for debugging (OPTIONAL).
