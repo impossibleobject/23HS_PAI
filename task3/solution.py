@@ -18,12 +18,20 @@ class BO_algo():
         # TODO: Define all relevant class members for your BO algorithm here.
         #pass
         #4 arrays of same size storing xs, fs, vs and acquisition function values af
+        print("new class")
         self.xs = np.empty((1, 1))
         self.fs = np.empty((1, 1))
         self.vs = np.empty((1, 1))
         self.afs = np.array([])
         self.domain = np.atleast_2d(np.linspace(DOMAIN[0, 0], DOMAIN[0, 1], num=10000)).T
-        self.lb = 1e-1 #lambda penalty scaler for unsafe evaluations
+        self.lb = 1.5 #lambda penalty scaler for unsafe evaluations
+        
+        #counters
+        self.activ = 0
+        self.add_dp = 0
+        self.opt_activ = 0
+        self.next_recomm = 0
+
 
         self.unsafe_tries = 0 #counter for unsafe tries where v > SAFETY_THRESHOLD
         f_kernel = Matern(nu=2.5, length_scale=1)
@@ -47,7 +55,7 @@ class BO_algo():
 
         # Chris: implement our sampler algo here
         #raise NotImplementedError
-
+        self.next_recomm += 1
         x_opt = self.optimize_acquisition_function() #get the optimal next x
 
         # TODO: (simon says) Maybe insert check for if v is within the safety 
@@ -65,7 +73,7 @@ class BO_algo():
             the point that maximizes the acquisition function, where
             x_opt in range of DOMAIN
         """
-
+        self.opt_activ += 1
         def objective(x):
             return -self.acquisition_function(x)
 
@@ -100,6 +108,7 @@ class BO_algo():
             shape (N, 1)
             Value of the acquisition function at x
         """
+        self.activ += 1
         x = np.atleast_2d(x)
         # TODO: Implement the acquisition function you want to optimize.
         #raise NotImplementedError
@@ -109,9 +118,16 @@ class BO_algo():
         v_mean, v_std = self.v_gpr.predict(x, return_std=True)
         def under_threshold(means, stds):
             return (means+stds)<=SAFETY_THRESHOLD
+        
+        safe_tries = (v_mean + v_std) <= SAFETY_THRESHOLD * 2
+        f_mean[safe_tries] = 0
+        f_std[safe_tries] = 0
+        #v_mean[safe_tries]= 0
+        #v_std[safe_tries] = 0
+
         #get maximum value in x under safety threshold kappa
         #x = np.argsort(()) #[under_threshold[v_mean, v_std]]
-        return (f_mean+f_std) - self.lb * np.max(v_mean + v_std, 0) #
+        return (f_mean+f_std) - self.lb * np.max(v_mean + v_std, 0) 
 
 
     def add_data_point(self, x: float, f: float, v: float):
@@ -129,6 +145,10 @@ class BO_algo():
         """
         # TODO: Add the observed data {x, f, v} to your model.
         #raise NotImplementedError
+        #filter incoming values for safe one
+        self.add_dp += 1
+        
+        #if v <= SAFETY_THRESHOLD*3:
         self.xs = np.vstack((self.xs, (x,)))
 
         self.fs = np.concatenate([self.fs, (f,)])
@@ -149,7 +169,9 @@ class BO_algo():
         """
         # TODO: Return your predicted safe optimum of f.
         #raise NotImplementedError
-        
+        print("run get_solution")
+        print(f"activation function runs: {self.activ}, optimized_activation_functions {self.opt_activ}")
+        print(f"next_recommendations {self.next_recomm}, datapoints put in: {self.add_dp}")
         # Compute the predicitions
         f_predictions = self.f_gpr.predict(self.domain)
         v_predictions = self.v_gpr.predict(self.domain)
@@ -159,7 +181,7 @@ class BO_algo():
 
         # Set all invalid predicitons to the worst value so we can take the 
         # maximum index later. This simplifies the handling.
-        f_predictions[invalid_preds] = np.min(f_predictions) # Chris: easy baseline push/ prev best: self.lb= 1e-1 and using np.min(f_predictions)
+        #f_predictions[invalid_preds] = np.min(f_predictions) # Chris: easy baseline push/ prev best: self.lb= 1e-1 and using np.min(f_predictions)
 
         # Get the index of the maximum, i.e. the index of the optimal x in our
         # domain. The invalid predictions will always perform worse than the
