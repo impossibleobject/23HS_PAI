@@ -24,7 +24,7 @@ class BO_algo():
         self.vs = np.empty((1, 1))
         self.afs = np.array([])
         self.domain = np.atleast_2d(np.linspace(DOMAIN[0, 0], DOMAIN[0, 1], num=10000)).T
-        self.lb = 1.5 #lambda penalty scaler for unsafe evaluations
+        self.lb = 5e-1 #lambda penalty scaler for unsafe evaluations
         
         #counters
         self.activ = 0
@@ -114,20 +114,21 @@ class BO_algo():
         #raise NotImplementedError
         
         f_mean, f_std = self.f_gpr.predict(x, return_std=True)
-        #self.v_gpr = self.v_gpr.fit(self.xs, self.vs)
         v_mean, v_std = self.v_gpr.predict(x, return_std=True)
-        def under_threshold(means, stds):
-            return (means+stds)<=SAFETY_THRESHOLD
         
-        safe_tries = (v_mean + v_std) <= SAFETY_THRESHOLD * 2
-        f_mean[safe_tries] = 0
-        f_std[safe_tries] = 0
-        #v_mean[safe_tries]= 0
-        #v_std[safe_tries] = 0
+        '''unsafe_tries = (v_mean + v_std) >= SAFETY_THRESHOLD * 1.5
+        f_mean[unsafe_tries] = 0
+        f_std[unsafe_tries] = 0
+        v_mean[unsafe_tries]= 0
+        v_std[unsafe_tries] = 0'''
 
         #get maximum value in x under safety threshold kappa
         #x = np.argsort(()) #[under_threshold[v_mean, v_std]]
-        return (f_mean+f_std) - self.lb * np.max(v_mean + v_std, 0) 
+        upper_f = (f_mean+f_std)
+        weighted_penalty = self.lb * np.maximum(v_mean + 1.96*v_std, 0)
+        #print(f"upper f: {upper_f}")
+        #print(f"weighted penalty: {weighted_penalty}") if weighted_penalty < 0 else None
+        return upper_f - weighted_penalty
 
 
     def add_data_point(self, x: float, f: float, v: float):
