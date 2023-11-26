@@ -76,7 +76,7 @@ class BO_algo():
             #print(f"v for offset {offset}: {v_pred}")
             return x_opt
 
-        OFFSET = 0.07
+        OFFSET = 0.06
         if self.add_dp == 1:
             return self.xs[0]+OFFSET
         if self.add_dp == 2:
@@ -99,7 +99,7 @@ class BO_algo():
         recommendation = x_opt
         # Make a random guess if we propose smth. that we already had.
         count = 0
-        while recommendation in self.xs[:, 0] and count < 100 or (v_pred > 4 and count < 1) or (v_std> 0.15 and count<1):
+        while recommendation in self.xs[:, 0] and count < 100 or (v_pred > 4 and count < 1) or (v_std > 0.15 and count<1):
             safe_point = self.xs[0, 0]
             interval = 0.75 * OFFSET if count < 10 else 0.3
             lower_bound = np.maximum(safe_point - interval, 0)
