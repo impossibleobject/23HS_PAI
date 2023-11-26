@@ -42,9 +42,9 @@ class BO_algo():
 
         self.unsafe_tries = 0 #counter for unsafe tries where v > SAFETY_THRESHOLD
         f_kernel = Matern(nu=2.5, length_scale=.5)
-        self.f_gpr = GaussianProcessRegressor(f_kernel, n_restarts_optimizer=5, alpha=0.15, normalize_y=True)
+        self.f_gpr = GaussianProcessRegressor(f_kernel, n_restarts_optimizer=10, alpha=0.15, normalize_y=True)
         v_kernel = ConstantKernel(4) + DotProduct(sigma_0=0) + Matern(nu=2.5, length_scale=.5)
-        self.v_gpr = GaussianProcessRegressor(v_kernel, n_restarts_optimizer=5, alpha=0.0001, normalize_y=True)
+        self.v_gpr = GaussianProcessRegressor(v_kernel, n_restarts_optimizer=10, alpha=0.0001, normalize_y=True)
 
     def next_recommendation(self):
         """
@@ -66,52 +66,48 @@ class BO_algo():
         DO_TEST = False
         if DO_TEST:
             STEP = 0.05
-            offset = self.add_dp*STEP
-            if self.xs[0] - offset > 0 and self.add_dp % 2 == 1:
-                offset *= -1
+            OFFSET = self.add_dp*STEP
+            if self.xs[0] - OFFSET > 0 and self.add_dp % 2 == 1:
+                OFFSET *= -1
                 
-            x_opt = self.xs[0] + offset
+            x_opt = self.xs[0] + OFFSET
             v_mean, v_std = self.v_gpr.predict([x_opt], return_std=True)
             v_pred = v_mean + v_std
             #print(f"v for offset {offset}: {v_pred}")
             return x_opt
 
-        offset = 0.07
+        OFFSET = 0.07
         if self.add_dp == 1:
-            return self.xs[0]+offset
+            return self.xs[0]+OFFSET
         if self.add_dp == 2:
-            if self.xs[0] - offset < 0.:
-                return self.xs[0]+offset*2
+            if self.xs[0] - OFFSET < 0.:
+                return self.xs[0]+OFFSET*1.5
             else:
-                return self.xs[0]-offset
+                return self.xs[0]-OFFSET
 
         x_opt = self.optimize_acquisition_function() #get the optimal next x
         v_mean, v_std = self.v_gpr.predict([[x_opt]], return_std=True)
         
 
         if self.add_dp == 3:
-            v_pred = v_mean + 6*v_std
+            v_pred = v_mean + 10*v_std
         else:
             v_pred = v_mean + 1.96*v_std
         print(f"v {v_pred} predicted, mean {v_mean}, std {v_std}")
         self.next_recomm += 1
-        
-        
-        
-        
 
         recommendation = x_opt
         # Make a random guess if we propose smth. that we already had.
-        # count = 0
-        # while recommendation in self.xs[:, 0] and count < 100:
-        #     safe_point = self.xs[0, 0]
-        #     interval = 0.1 if count < 5 else 0.3
-        #     lower_bound = np.maximum(safe_point - interval, 0)
-        #     upper_bound = np.minimum(safe_point + interval, 10)
-        #     safer_domain = np.linspace(lower_bound, upper_bound, num=100)
-        #     recommendation = np.random.choice(safer_domain)
-        #     print(f"random sample: {recommendation}, count: {count}")
-        #     count += 1
+        count = 0
+        while recommendation in self.xs[:, 0] and count < 100 or (v_pred > 4 and count < 1) or (v_std> 0.15 and count<1):
+            safe_point = self.xs[0, 0]
+            interval = 0.75 * OFFSET if count < 10 else 0.3
+            lower_bound = np.maximum(safe_point - interval, 0)
+            upper_bound = np.minimum(safe_point + interval, 10)
+            safer_domain = np.linspace(lower_bound, upper_bound, num=100)
+            recommendation = np.random.choice(safer_domain)
+            print(f"random sample: {recommendation}, count: {count}")
+            count += 1
 
         #print(f"x recommended: {recommendation}")
         return recommendation
