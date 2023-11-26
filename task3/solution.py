@@ -76,21 +76,21 @@ class BO_algo():
             #print(f"v for offset {offset}: {v_pred}")
             return x_opt
 
-        
+        offset = 0.07
         if self.add_dp == 1:
-            return self.xs[0]+0.1
+            return self.xs[0]+offset
         if self.add_dp == 2:
-            if self.xs[0] - 0.1 < 0.:
-                return self.xs[0]+0.2
+            if self.xs[0] - offset < 0.:
+                return self.xs[0]+offset*2
             else:
-                return self.xs[0]-0.1
+                return self.xs[0]-offset
 
         x_opt = self.optimize_acquisition_function() #get the optimal next x
         v_mean, v_std = self.v_gpr.predict([[x_opt]], return_std=True)
         
 
         if self.add_dp == 3:
-            v_pred = v_mean + 3*v_std
+            v_pred = v_mean + 6*v_std
         else:
             v_pred = v_mean + 1.96*v_std
         print(f"v {v_pred} predicted, mean {v_mean}, std {v_std}")
