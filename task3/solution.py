@@ -3,7 +3,9 @@ import numpy as np
 from scipy.optimize import fmin_l_bfgs_b
 # import additional ...
 from sklearn.gaussian_process import GaussianProcessRegressor
-from sklearn.gaussian_process.kernels import Matern, RBF, DotProduct, WhiteKernel
+from sklearn.gaussian_process.kernels import Matern, RBF, DotProduct
+
+np.random.seed(1)
 
 # global variables
 DOMAIN = np.array([[0, 10]])  # restrict \theta in [0, 10]
@@ -18,13 +20,18 @@ class BO_algo():
         # TODO: Define all relevant class members for your BO algorithm here.
         #pass
         #4 arrays of same size storing xs, fs, vs and acquisition function values af
-        print("new class")
+        #print("new class")
         self.xs = np.empty((1, 1))
         self.fs = np.empty((1, 1))
         self.vs = np.empty((1, 1))
         self.afs = np.array([])
         self.domain = np.atleast_2d(np.linspace(DOMAIN[0, 0], DOMAIN[0, 1], num=10000)).T
-        self.lb = 1 #lambda penalty scaler for unsafe evaluations
+        self.lb = 1e-1 #lambda penalty scaler for unsafe evaluations
+        
+        # We set it to None so that the code breaks if we actually try to index
+        # an array with the "unset" value (None) of safe_point_idx, i.e. if we  
+        # did not set it to something before usage.
+        self.safe_point_idx = None
         
         #counters
         self.activ = 0
@@ -34,10 +41,10 @@ class BO_algo():
 
 
         self.unsafe_tries = 0 #counter for unsafe tries where v > SAFETY_THRESHOLD
-        f_kernel = Matern(nu=2.5, length_scale=1) + WhiteKernel(noise_level=0.15**2)
-        self.f_gpr = GaussianProcessRegressor(f_kernel, n_restarts_optimizer=20)
-        v_kernel = DotProduct(sigma_0=0) + Matern(nu=2.5, length_scale=1) + WhiteKernel(noise_level=0.0001**2)
-        self.v_gpr = GaussianProcessRegressor(v_kernel, n_restarts_optimizer=20)
+        f_kernel = Matern(nu=2.5, length_scale=.5)
+        self.f_gpr = GaussianProcessRegressor(f_kernel, n_restarts_optimizer=5, alpha=0.15, normalize_y=True)
+        v_kernel = 4 + DotProduct(sigma_0=0) + Matern(nu=2.5, length_scale=.5)
+        self.v_gpr = GaussianProcessRegressor(v_kernel, n_restarts_optimizer=5, alpha=0.0001, normalize_y=True)
 
     def next_recommendation(self):
         """
@@ -55,13 +62,47 @@ class BO_algo():
 
         # Chris: implement our sampler algo here
         #raise NotImplementedError
+        #approach of randomly going left and right of x_init
+        DO_TEST = False
+        if DO_TEST:
+            STEP = 0.05
+            offset = self.add_dp*STEP
+            if self.xs[0] - offset > 0 and self.add_dp % 2 == 1:
+                offset *= -1
+                
+            x_opt = self.xs[0] + offset
+            v_mean, v_std = self.v_gpr.predict([x_opt], return_std=True)
+            v_pred = v_mean + v_std
+            #print(f"v for offset {offset}: {v_pred}")
+            return x_opt
+
+
         self.next_recomm += 1
         x_opt = self.optimize_acquisition_function() #get the optimal next x
 
         # TODO: (simon says) Maybe insert check for if v is within the safety 
         # bounds.
+        v_mean, v_std = self.v_gpr.predict([[x_opt]], return_std=True)
+        v_pred = v_mean + 0.5*v_std
+        
+        #if self.add_dp > 0 and v_pred >= SAFETY_THRESHOLD:
+        #    recommendation = self.get_safest_point()
+        #else:
+        #    recommendation = x_opt
         recommendation = x_opt
+        # Make a random guess if we propose smth. that we already had.
+        count = 0
+        while recommendation in self.xs[:, 0] and count < 100:
+            safe_point = self.xs[0, 0]
+            interval = 0.1 if count < 5 else 0.3
+            lower_bound = np.maximum(safe_point - interval, 0)
+            upper_bound = np.minimum(safe_point + interval, 10)
+            safer_domain = np.linspace(lower_bound, upper_bound, num=100)
+            recommendation = np.random.choice(safer_domain)
+            print(f"random sample: {recommendation}, count: {count}")
+            count += 1
 
+        print(f"x recommended: {recommendation}")
         return recommendation
 
     def optimize_acquisition_function(self):
@@ -115,20 +156,29 @@ class BO_algo():
         
         f_mean, f_std = self.f_gpr.predict(x, return_std=True)
         v_mean, v_std = self.v_gpr.predict(x, return_std=True)
-        
-        '''unsafe_tries = (v_mean + v_std) >= SAFETY_THRESHOLD * 1.5
-        f_mean[unsafe_tries] = 0
-        f_std[unsafe_tries] = 0
-        v_mean[unsafe_tries]= 0
-        v_std[unsafe_tries] = 0'''
 
         #get maximum value in x under safety threshold kappa
         #x = np.argsort(()) #[under_threshold[v_mean, v_std]]
-        upper_f = (f_mean+f_std)
-        weighted_penalty =  np.maximum(self.lb * (v_mean + 3*v_std) if v_mean + 1.96*v_std > SAFETY_THRESHOLD else 0, 0)
+        upper_f = f_mean + f_std
+        v_pred = v_mean + 1.96*v_std    #95% confidence interval == 1.96
+        weighted_penalty =  (self.lb * v_pred) #if v_pred > SAFETY_THRESHOLD else 0
         #print(f"upper f: {upper_f}")
         #print(f"weighted penalty: {weighted_penalty}") if weighted_penalty < 0 else None
-        return upper_f - weighted_penalty
+        return max(upper_f - weighted_penalty, 0)
+
+    def get_safest_point(self):
+        def get_score(f, v):
+            if v>SAFETY_THRESHOLD:
+                penalty = -v
+            else:
+                penalty = 0
+            return f - self.lb * penalty
+        
+        scores = [get_score(*f_v) for f_v in zip(self.fs, self.vs)]
+        fall_back_idx = np.argmax(scores)
+        return self.xs[fall_back_idx]
+        
+
 
 
     def add_data_point(self, x: float, f: float, v: float):
@@ -147,16 +197,34 @@ class BO_algo():
         # TODO: Add the observed data {x, f, v} to your model.
         #raise NotImplementedError
         #filter incoming values for safe one
-        self.add_dp += 1
+        
+        
+        
+        if self.safe_point_idx==None and v[0] < SAFETY_THRESHOLD:
+            self.safe_point_idx = self.add_dp
         
         #if v <= SAFETY_THRESHOLD*3:
-        self.xs = np.vstack((self.xs, (x,)))
+        #print(f"adding {x} to array {self.xs}")
+        if self.add_dp == 0:
+            print(f"first v added: {v} with x {x}") #we know this is always safe
+            self.xs = np.array([x])
+            self.fs = np.array([f])
+            self.vs = np.array([v])
+        else:
+            self.xs = np.vstack((self.xs, (x,)))
+            #print(f"results in {self.xs}")
+            #print(f"adding f {f} to array {self.fs}")
+            self.fs = np.concatenate([self.fs, (f,)])
+            #print(f"results in {self.fs}")
+            #print(f"adding v {v} to array {self.vs}")
+            self.vs = np.concatenate([self.vs, (v,)])
+            #print(f"results in {self.vs}")
 
-        self.fs = np.concatenate([self.fs, (f,)])
-        self.vs = np.concatenate([self.vs, (v,)])
         #retrain
         self.f_gpr = self.f_gpr.fit(self.xs, self.fs)
         self.v_gpr = self.v_gpr.fit(self.xs, self.vs)
+
+        self.add_dp += 1
         
 
     def get_solution(self):
@@ -170,12 +238,13 @@ class BO_algo():
         """
         # TODO: Return your predicted safe optimum of f.
         #raise NotImplementedError
-        print("run get_solution")
-        print(f"activation function runs: {self.activ}, optimized_activation_functions {self.opt_activ}")
-        print(f"next_recommendations {self.next_recomm}, datapoints put in: {self.add_dp}")
+        #print("run get_solution")
+        #print(f"activation function runs: {self.activ}, optimized_activation_functions {self.opt_activ}")
+        #print(f"next_recommendations {self.next_recomm}, datapoints put in: {self.add_dp}")
         # Compute the predicitions
         f_predictions = self.f_gpr.predict(self.domain)
         v_predictions = self.v_gpr.predict(self.domain)
+        
         
         # Select which preditions are (probably) within our safety threshold
         invalid_preds = v_predictions > SAFETY_THRESHOLD
