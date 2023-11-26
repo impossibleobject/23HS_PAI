@@ -3,7 +3,7 @@ import numpy as np
 from scipy.optimize import fmin_l_bfgs_b
 # import additional ...
 from sklearn.gaussian_process import GaussianProcessRegressor
-from sklearn.gaussian_process.kernels import Matern, RBF, DotProduct
+from sklearn.gaussian_process.kernels import Matern, RBF, DotProduct, ConstantKernel
 
 np.random.seed(1)
 
@@ -26,7 +26,7 @@ class BO_algo():
         self.vs = np.empty((1, 1))
         self.afs = np.array([])
         self.domain = np.atleast_2d(np.linspace(DOMAIN[0, 0], DOMAIN[0, 1], num=10000)).T
-        self.lb = 1e-1 #lambda penalty scaler for unsafe evaluations
+        self.lb = 1e5 #lambda penalty scaler for unsafe evaluations
         
         # We set it to None so that the code breaks if we actually try to index
         # an array with the "unset" value (None) of safe_point_idx, i.e. if we  
@@ -43,7 +43,7 @@ class BO_algo():
         self.unsafe_tries = 0 #counter for unsafe tries where v > SAFETY_THRESHOLD
         f_kernel = Matern(nu=2.5, length_scale=.5)
         self.f_gpr = GaussianProcessRegressor(f_kernel, n_restarts_optimizer=5, alpha=0.15, normalize_y=True)
-        v_kernel = 4 + DotProduct(sigma_0=0) + Matern(nu=2.5, length_scale=.5)
+        v_kernel = ConstantKernel(4) + DotProduct(sigma_0=0) + Matern(nu=2.5, length_scale=.5)
         self.v_gpr = GaussianProcessRegressor(v_kernel, n_restarts_optimizer=5, alpha=0.0001, normalize_y=True)
 
     def next_recommendation(self):
@@ -60,7 +60,7 @@ class BO_algo():
         # In implementing this function, you may use
         # optimize_acquisition_function() defined below.
 
-        # Chris: implement our sampler algo here
+        
         #raise NotImplementedError
         #approach of randomly going left and right of x_init
         DO_TEST = False
@@ -76,33 +76,44 @@ class BO_algo():
             #print(f"v for offset {offset}: {v_pred}")
             return x_opt
 
-
-        self.next_recomm += 1
-        x_opt = self.optimize_acquisition_function() #get the optimal next x
-
-        # TODO: (simon says) Maybe insert check for if v is within the safety 
-        # bounds.
-        v_mean, v_std = self.v_gpr.predict([[x_opt]], return_std=True)
-        v_pred = v_mean + 0.5*v_std
         
-        #if self.add_dp > 0 and v_pred >= SAFETY_THRESHOLD:
-        #    recommendation = self.get_safest_point()
-        #else:
-        #    recommendation = x_opt
+        if self.add_dp == 1:
+            return self.xs[0]+0.1
+        if self.add_dp == 2:
+            if self.xs[0] - 0.1 < 0.:
+                return self.xs[0]+0.2
+            else:
+                return self.xs[0]-0.1
+
+        x_opt = self.optimize_acquisition_function() #get the optimal next x
+        v_mean, v_std = self.v_gpr.predict([[x_opt]], return_std=True)
+        
+
+        if self.add_dp == 3:
+            v_pred = v_mean + 3*v_std
+        else:
+            v_pred = v_mean + 1.96*v_std
+        print(f"v {v_pred} predicted, mean {v_mean}, std {v_std}")
+        self.next_recomm += 1
+        
+        
+        
+        
+
         recommendation = x_opt
         # Make a random guess if we propose smth. that we already had.
-        count = 0
-        while recommendation in self.xs[:, 0] and count < 100:
-            safe_point = self.xs[0, 0]
-            interval = 0.1 if count < 5 else 0.3
-            lower_bound = np.maximum(safe_point - interval, 0)
-            upper_bound = np.minimum(safe_point + interval, 10)
-            safer_domain = np.linspace(lower_bound, upper_bound, num=100)
-            recommendation = np.random.choice(safer_domain)
-            print(f"random sample: {recommendation}, count: {count}")
-            count += 1
+        # count = 0
+        # while recommendation in self.xs[:, 0] and count < 100:
+        #     safe_point = self.xs[0, 0]
+        #     interval = 0.1 if count < 5 else 0.3
+        #     lower_bound = np.maximum(safe_point - interval, 0)
+        #     upper_bound = np.minimum(safe_point + interval, 10)
+        #     safer_domain = np.linspace(lower_bound, upper_bound, num=100)
+        #     recommendation = np.random.choice(safer_domain)
+        #     print(f"random sample: {recommendation}, count: {count}")
+        #     count += 1
 
-        print(f"x recommended: {recommendation}")
+        #print(f"x recommended: {recommendation}")
         return recommendation
 
     def optimize_acquisition_function(self):
@@ -154,31 +165,17 @@ class BO_algo():
         # TODO: Implement the acquisition function you want to optimize.
         #raise NotImplementedError
         
-        f_mean, f_std = self.f_gpr.predict(x, return_std=True)
+        
         v_mean, v_std = self.v_gpr.predict(x, return_std=True)
+        if self.add_dp == 2:
+            return -(v_mean + 3*v_std)
+        
+        f_mean, f_std = self.f_gpr.predict(x, return_std=True)
 
-        #get maximum value in x under safety threshold kappa
-        #x = np.argsort(()) #[under_threshold[v_mean, v_std]]
-        upper_f = f_mean + f_std
-        v_pred = v_mean + 1.96*v_std    #95% confidence interval == 1.96
+        v_pred = v_mean + 1.96*v_std
         weighted_penalty =  (self.lb * v_pred) #if v_pred > SAFETY_THRESHOLD else 0
-        #print(f"upper f: {upper_f}")
         #print(f"weighted penalty: {weighted_penalty}") if weighted_penalty < 0 else None
-        return max(upper_f - weighted_penalty, 0)
-
-    def get_safest_point(self):
-        def get_score(f, v):
-            if v>SAFETY_THRESHOLD:
-                penalty = -v
-            else:
-                penalty = 0
-            return f - self.lb * penalty
-        
-        scores = [get_score(*f_v) for f_v in zip(self.fs, self.vs)]
-        fall_back_idx = np.argmax(scores)
-        return self.xs[fall_back_idx]
-        
-
+        return (f_mean+f_std) - weighted_penalty
 
 
     def add_data_point(self, x: float, f: float, v: float):
@@ -211,6 +208,7 @@ class BO_algo():
             self.fs = np.array([f])
             self.vs = np.array([v])
         else:
+            print(f"v {v} with x {x}")
             self.xs = np.vstack((self.xs, (x,)))
             #print(f"results in {self.xs}")
             #print(f"adding f {f} to array {self.fs}")
