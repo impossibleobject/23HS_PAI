@@ -3,7 +3,7 @@ import numpy as np
 from scipy.optimize import fmin_l_bfgs_b
 # import additional ...
 from sklearn.gaussian_process import GaussianProcessRegressor
-from sklearn.gaussian_process.kernels import Matern, RBF, DotProduct
+from sklearn.gaussian_process.kernels import Matern, RBF, DotProduct, WhiteKernel
 
 # global variables
 DOMAIN = np.array([[0, 10]])  # restrict \theta in [0, 10]
@@ -24,7 +24,7 @@ class BO_algo():
         self.vs = np.empty((1, 1))
         self.afs = np.array([])
         self.domain = np.atleast_2d(np.linspace(DOMAIN[0, 0], DOMAIN[0, 1], num=10000)).T
-        self.lb = 5e-1 #lambda penalty scaler for unsafe evaluations
+        self.lb = 1 #lambda penalty scaler for unsafe evaluations
         
         #counters
         self.activ = 0
@@ -34,10 +34,10 @@ class BO_algo():
 
 
         self.unsafe_tries = 0 #counter for unsafe tries where v > SAFETY_THRESHOLD
-        f_kernel = Matern(nu=2.5, length_scale=1)
-        self.f_gpr = GaussianProcessRegressor(f_kernel, n_restarts_optimizer=20, alpha=0.15)
-        v_kernel = DotProduct(sigma_0=0) + Matern(nu=2.5, length_scale=1)
-        self.v_gpr = GaussianProcessRegressor(v_kernel, n_restarts_optimizer=20, alpha=0.0001)
+        f_kernel = Matern(nu=2.5, length_scale=1) + WhiteKernel(noise_level=0.15**2)
+        self.f_gpr = GaussianProcessRegressor(f_kernel, n_restarts_optimizer=20)
+        v_kernel = DotProduct(sigma_0=0) + Matern(nu=2.5, length_scale=1) + WhiteKernel(noise_level=0.0001**2)
+        self.v_gpr = GaussianProcessRegressor(v_kernel, n_restarts_optimizer=20)
 
     def next_recommendation(self):
         """
@@ -125,7 +125,7 @@ class BO_algo():
         #get maximum value in x under safety threshold kappa
         #x = np.argsort(()) #[under_threshold[v_mean, v_std]]
         upper_f = (f_mean+f_std)
-        weighted_penalty = self.lb * np.maximum(v_mean + 1.96*v_std, 0)
+        weighted_penalty =  np.maximum(self.lb * (v_mean + 3*v_std) if v_mean + 1.96*v_std > SAFETY_THRESHOLD else 0, 0)
         #print(f"upper f: {upper_f}")
         #print(f"weighted penalty: {weighted_penalty}") if weighted_penalty < 0 else None
         return upper_f - weighted_penalty
@@ -182,7 +182,7 @@ class BO_algo():
 
         # Set all invalid predicitons to the worst value so we can take the 
         # maximum index later. This simplifies the handling.
-        #f_predictions[invalid_preds] = np.min(f_predictions) # Chris: easy baseline push/ prev best: self.lb= 1e-1 and using np.min(f_predictions)
+        f_predictions[invalid_preds] = f_predictions.min() # Chris: easy baseline push/ prev best: self.lb= 1e-1 and using np.min(f_predictions)
 
         # Get the index of the maximum, i.e. the index of the optimal x in our
         # domain. The invalid predictions will always perform worse than the
