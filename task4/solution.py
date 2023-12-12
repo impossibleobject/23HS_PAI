@@ -68,7 +68,7 @@ class Actor:
             output_dim=self.action_dim,
             hidden_size=self.hidden_size,
             hidden_layers=self.hidden_layers,
-            activation="")
+            activation="")                      #currently just ReLu need to specify this later
 
     def clamp_log_std(self, log_std: torch.Tensor) -> torch.Tensor:
         '''
@@ -93,6 +93,29 @@ class Actor:
         # TODO: Implement this function which returns an action and its log probability.
         # If working with stochastic policies, make sure that its log_std are clamped 
         # using the clamp_log_std function.
+        
+        
+        
+        actions = self.model.forward(state)                                     #getting possible actions from out network 
+        probabilities= torch.nn.functional.softmax(actions)                     #converting resulting actions to probabilities using softmax
+        
+        if deterministic:
+           log_probabilities= torch.log(probabilities)
+           idx = torch.argmax(log_probabilities)                                #taking the max arg of our log probabilities
+           action, log_prob= actions[idx], log_probabilities[idx]               #returning our max log probabilities and best action
+           
+        else:
+            #quite unsure with the results here, do not know why we need stdv yet 
+            #currently implemented code for discrete action space 
+            #if we want continous action spaces may need to change network structure
+            
+             
+           action = torch.multinomial(probabilities, num_samples=1).item()      #sampled an action
+           #how to get the probability of sampled action?
+           
+           
+           log_std = self.clamp_log_std()   #why would we need the log std? don't have the std
+        
         assert action.shape == (state.shape[0], self.action_dim) and \
             log_prob.shape == (state.shape[0], self.action_dim), 'Incorrect shape for action or log_prob.'
         return action, log_prob
