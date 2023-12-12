@@ -63,7 +63,12 @@ class Actor:
         '''
         # TODO: Implement this function which sets up the actor network. 
         # Take a look at the NeuralNetwork class in utils.py. 
-        pass
+        self.model = NeuralNetwork(
+            input_dim=self.state_dim,
+            output_dim=self.action_dim,
+            hidden_size=self.hidden_size,
+            hidden_layers=self.hidden_layers,
+            activation="")
 
     def clamp_log_std(self, log_std: torch.Tensor) -> torch.Tensor:
         '''
