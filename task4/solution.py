@@ -211,6 +211,17 @@ class Agent:
         # action = np.random.uniform(-1, 1, (1,))
         # ATTENTION: the following code is at this moment this NOT correct!
         action, log_prob = self.actor.get_action_and_log_prob(s, True)
+        
+        #Chris: need to specify an optimizer within critic_target_update_step
+        
+        if train: 
+            #train network, very rudimentary and not complete what I did
+            #self.run_gradient_update_step(self.actor.get_action_and_log_prob(s,True), loss= ...) 
+            pass
+        else: 
+            #evaluation mode, just forward pass
+            with torch.no_grad():
+                pass
 
         assert action.shape == (1,), 'Incorrect action shape.'
         assert isinstance(action, np.ndarray ), 'Action dtype must be np.ndarray' 
