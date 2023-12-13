@@ -109,12 +109,19 @@ class Actor:
             #currently implemented code for discrete action space 
             #if we want continous action spaces may need to change network structure
             
-             
-           action = torch.multinomial(probabilities, num_samples=1).item()      #sampled an action
+           meaned= torch.mean(actions)
+           log_stdev = torch.log(torch.std(actions))
+
+           log_std = self.clamp_log_std(log_std=log_stdev)
+           stdev= torch.exp(log_std)           
+           
+           dist = torch.distributions.normal.Normal(meaned, stdev)              
+           action = dist.sample()                                                #sample an action
+           log_prob = dist.log_prob(action)
+           #action = torch.multinomial(probabilities, num_samples=1).item()      #sampled an action
            #how to get the probability of sampled action?
            
            
-           log_std = self.clamp_log_std()   #why would we need the log std? don't have the std
         
         assert action.shape == (state.shape[0], self.action_dim) and \
             log_prob.shape == (state.shape[0], self.action_dim), 'Incorrect shape for action or log_prob.'
