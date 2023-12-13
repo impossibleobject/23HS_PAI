@@ -41,7 +41,8 @@ class NeuralNetwork(nn.Module):
     def forward(self, s: torch.Tensor) -> torch.Tensor:
         # TODO: Implement the forward pass for the neural network you have defined.
         return self.forward_pass(s)
-    
+
+# CURRENT GUESS: SHIT PPL SPEAK FOR POLICY
 class Actor:
     def __init__(self,hidden_size: int, hidden_layers: int, actor_lr: float,
                 state_dim: int = 3, action_dim: int = 1, device: torch.device = torch.device('cpu')):
@@ -94,8 +95,6 @@ class Actor:
         # If working with stochastic policies, make sure that its log_std are clamped 
         # using the clamp_log_std function.
         
-        
-        
         actions = self.model.forward(state)                                     #getting possible actions from out network 
         probabilities= torch.nn.functional.softmax(actions)                     #converting resulting actions to probabilities using softmax
         
@@ -109,15 +108,15 @@ class Actor:
             #currently implemented code for discrete action space 
             #if we want continous action spaces may need to change network structure
             
-           meaned= torch.mean(actions)
-           log_stdev = torch.log(torch.std(actions))
+           mean_action= torch.mean(actions)
+           log_std_unclamped = torch.log(torch.std(actions))
 
-           log_std = self.clamp_log_std(log_std=log_stdev)
-           stdev= torch.exp(log_std)           
+           log_std_action = self.clamp_log_std(log_std=log_std_unclamped)
+           std_action = torch.exp(log_std_action)           
            
-           dist = torch.distributions.normal.Normal(meaned, stdev)              
+           dist = torch.distributions.normal.Normal(mean_action, std_action)              
            action = dist.sample()                                                #sample an action
-           log_prob = dist.log_prob(action)
+           log_prob = dist.log_prob(action)                                      #get log prob of that (sampled) action
            #action = torch.multinomial(probabilities, num_samples=1).item()      #sampled an action
            #how to get the probability of sampled action?
            
@@ -127,7 +126,7 @@ class Actor:
             log_prob.shape == (state.shape[0], self.action_dim), 'Incorrect shape for action or log_prob.'
         return action, log_prob
 
-
+# CURRENT GUESS: SHIT PPL SPEAK FOR Q / VALUE FUNCTION
 class Critic:
     def __init__(self, hidden_size: int, 
                  hidden_layers: int, critic_lr: int, state_dim: int = 3, 
@@ -144,7 +143,19 @@ class Critic:
     def setup_critic(self):
         # TODO: Implement this function which sets up the critic(s). Take a look at the NeuralNetwork 
         # class in utils.py. Note that you can have MULTIPLE critic networks in this class.
-        pass
+        # Create self.networks many networks.
+        # The range(5) is completely arbitrary. Changing it should change 
+        #  predictive performace and computational load.
+        self.networks = 5
+        self.networks = [
+            NeuralNetwork(
+                input_dim=self.state_dim,
+                output_dim=self.action_dim,
+                hidden_layers=self.hidden_layers,
+                hidden_size=self.hidden_size,
+                activation="")
+            for _ in range(5)
+        ]
 
 class TrainableParameter:
     '''
@@ -182,8 +193,12 @@ class Agent:
 
     def setup_agent(self):
         # TODO: Setup off-policy agent with policy and critic classes. 
-        # Feel free to instantiate any other parameters you feel you might need.   
-        pass
+        # Feel free to instantiate any other parameters you feel you might need.
+
+        # (hidden_size, hidden_layers, lr, state_dim, action_dim, device)
+        init_tuple = (100, 10, 1, self.state_dim, self.action_dim, self.device)
+        self.actor = Actor(*init_tuple)
+        self.critic = Critic(*init_tuple)
 
     def get_action(self, s: np.ndarray, train: bool) -> np.ndarray:
         """
@@ -193,7 +208,9 @@ class Agent:
         :return: np.ndarray,, action to apply on the environment, shape (1,)
         """
         # TODO: Implement a function that returns an action from the policy for the state s.
-        action = np.random.uniform(-1, 1, (1,))
+        # action = np.random.uniform(-1, 1, (1,))
+        # ATTENTION: the following code is at this moment this NOT correct!
+        action, log_prob = self.actor.get_action_and_log_prob(s, True)
 
         assert action.shape == (1,), 'Incorrect action shape.'
         assert isinstance(action, np.ndarray ), 'Action dtype must be np.ndarray' 
