@@ -224,6 +224,7 @@ class Agent:
             #L: give range of options, get rewards from critic -> pick best one in train
             with torch.inference_mode():
                 options = np.linspace(-1,1, 100)
+                options = torch.tensor(options)
                 scores = self.critic.network(options)
                 opt_idx = np.argmax(scores)
                 action = options[opt_idx]
