@@ -44,6 +44,8 @@ class NeuralNetwork(nn.Module):
 
     def forward(self, s: torch.Tensor) -> torch.Tensor:
         # TODO: Implement the forward pass for the neural network you have defined.
+        if not isinstance(s, torch.Tensor):
+            s = torch.Tensor(s)
         return self.forward_pass(s)
 
 # CURRENT GUESS: SHIT PPL SPEAK FOR POLICY
@@ -123,9 +125,7 @@ class Actor:
            action = dist.sample()                                                #sample an action
            log_prob = dist.log_prob(action)                                      #get log prob of that (sampled) action
            #action = torch.multinomial(probabilities, num_samples=1).item()      #sampled an action
-           #how to get the probability of sampled action?
-           
-           
+           #how to get the probability of sampled action?           
         
         assert action.shape == (state.shape[0], self.action_dim) and \
             log_prob.shape == (state.shape[0], self.action_dim), 'Incorrect shape for action or log_prob.'
@@ -230,14 +230,20 @@ class Agent:
             #C: self.run_gradient_update_step(self.actor.get_action_and_log_prob(s,True), loss= ...) 
             #L: give range of options, get rewards from critic -> pick best one in train
             with torch.inference_mode():
-                options = np.expand_dims(np.linspace(-1,1, 100, dtype=np.float32), -1)
+                '''options = np.linspace(-1,1, 100, dtype=np.float32)
+                action = np.array([np.random.choice(options)], dtype=np.float32)
+                '''
+                #options = np.expand_dims(options, -1)
                 #print(f"tp dim: {np.transpose(options).shape}")
-                options = torch.tensor(options)
+
+                '''                options = torch.tensor(options)
                 states_holder = torch.ones((100, 1)) * s
                 state_actions = torch.hstack((states_holder, options))
                 scores = self.critic.network(state_actions)
                 opt_idx = np.argmax(scores)
                 action = options[opt_idx]
+                #print(action)'''
+                action, _ = self.actor.get_action_and_log_prob(s, True)
         else: 
             #S: evaluation mode, just forward pass -> actor picks directly
             with torch.inference_mode():
@@ -292,8 +298,12 @@ class Agent:
         s_batch, a_batch, r_batch, s_prime_batch = batch
         loss = torch.nn.MSELoss()
         # TODO: Implement Critic(s) update here.
+        # TODO SIMON: There is a conceputal error here. I do not know exactly. 
+        # what actor is supposed to predict. Either it is the next state from 
+        # the current state + action or it is the next action from the current 
+        # state. Idk what we need s_prime for.
         action_prediction = self.actor.network(s_batch)
-        self.run_gradient_update_step(self.actor, loss(action_prediction, s_prime_batch))   #maybe implement the policy gradient 
+        self.run_gradient_update_step(self.actor, loss(action_prediction, a_batch))   #maybe implement the policy gradient 
         # TODO: Implement Policy update here
         state_action = torch.hstack((s_batch, a_batch))
         #print(state_action.shape)
