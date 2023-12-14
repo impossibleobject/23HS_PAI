@@ -146,8 +146,7 @@ class Critic:
         # Create self.networks many networks.
         # The range(5) is completely arbitrary. Changing it should change 
         #  predictive performace and computational load.
-        self.networks = 5
-        self.networks = [
+        '''self.networks = [
             NeuralNetwork(
                 input_dim=self.state_dim,
                 output_dim=self.action_dim,
@@ -155,7 +154,13 @@ class Critic:
                 hidden_size=self.hidden_size,
                 activation="")
             for _ in range(5)
-        ]
+        ]'''
+        self.network = NeuralNetwork(
+                input_dim=self.state_dim,
+                output_dim=self.action_dim,
+                hidden_layers=self.hidden_layers,
+                hidden_size=self.hidden_size,
+                activation="")
 
 class TrainableParameter:
     '''
@@ -209,19 +214,25 @@ class Agent:
         """
         # TODO: Implement a function that returns an action from the policy for the state s.
         # action = np.random.uniform(-1, 1, (1,))
-        # ATTENTION: the following code is at this moment this NOT correct!
-        action, log_prob = self.actor.get_action_and_log_prob(s, True)
+        #torque/action between [-1,1] bc specified above
         
         #Chris: need to specify an optimizer within critic_target_update_step
         
         if train: 
-            #train network, very rudimentary and not complete what I did
-            #self.run_gradient_update_step(self.actor.get_action_and_log_prob(s,True), loss= ...) 
-            pass
+            #C: train network, very rudimentary and not complete what I did
+            #C: self.run_gradient_update_step(self.actor.get_action_and_log_prob(s,True), loss= ...) 
+            #L: give range of options, get rewards from critic -> pick best one in train
+            with torch.inference_mode():
+                options = np.linspace(-1,1, 100)
+                scores = self.critic.network(options)
+                opt_idx = np.argmax(scores)
+                action = options[opt_idx]
         else: 
-            #evaluation mode, just forward pass
-            with torch.no_grad():
-                pass
+            #S: evaluation mode, just forward pass -> actor picks directly
+            with torch.inference_mode():
+                # ATTENTION: the following code is at this moment this NOT correct!
+                action, log_prob = self.actor.get_action_and_log_prob(s, True)
+                action = torch.clamp(action, -1,1)       #may be wrong, try to bound 
 
         assert action.shape == (1,), 'Incorrect action shape.'
         assert isinstance(action, np.ndarray ), 'Action dtype must be np.ndarray' 
@@ -270,8 +281,12 @@ class Agent:
         s_batch, a_batch, r_batch, s_prime_batch = batch
 
         # TODO: Implement Critic(s) update here.
-
+        action_prediction = self.actor.network(s_batch)
+        self.run_gradient_update_step(self.actor.network, torch.nn.MSELoss(action_prediction, s_prime_batch))   #maybe implement the policy gradient 
         # TODO: Implement Policy update here
+        critical_prediction = self.critic.network(torch.cat(s_batch, a_batch))
+        self.run_gradient_update_step(self.critic.network, torch.nn.MSELoss(critical_prediction, r_batch))
+        
 
 
 # This main function is provided here to enable some basic testing. 
