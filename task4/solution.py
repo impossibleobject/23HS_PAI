@@ -23,7 +23,11 @@ class NeuralNetwork(nn.Module):
         # TODO: Implement this function which should define a neural network 
         # with a variable number of hidden layers and hidden units.
         # Here you should define layers which your network will use.
-
+        act_fun = {
+            "ReLU": torch.nn.ReLU,
+            "GELU": torch.nn.GELU,
+            "": torch.nn.SELU,
+        }[activation]
         self.forward_pass = nn.Sequential(
             nn.Linear(in_features=input_dim, out_features=hidden_size),
             nn.ReLU(),
@@ -64,12 +68,13 @@ class Actor:
         '''
         # TODO: Implement this function which sets up the actor network. 
         # Take a look at the NeuralNetwork class in utils.py. 
-        self.model = NeuralNetwork(
+        self.network = NeuralNetwork(
             input_dim=self.state_dim,
             output_dim=self.action_dim,
             hidden_size=self.hidden_size,
             hidden_layers=self.hidden_layers,
             activation="")                      #currently just ReLu need to specify this later
+        self.optimizer = optim.AdamW(self.network.parameters(), lr = self.actor_lr)
 
     def clamp_log_std(self, log_std: torch.Tensor) -> torch.Tensor:
         '''
@@ -95,7 +100,7 @@ class Actor:
         # If working with stochastic policies, make sure that its log_std are clamped 
         # using the clamp_log_std function.
         
-        actions = self.model.forward(state)                                     #getting possible actions from out network 
+        actions = self.network.forward(state)                                     #getting possible actions from out network 
         probabilities= torch.nn.functional.softmax(actions)                     #converting resulting actions to probabilities using softmax
         
         if deterministic:
@@ -138,6 +143,7 @@ class Critic:
         self.state_dim = state_dim
         self.action_dim = action_dim
         self.device = device
+        #print(f"Critic state_dim: {state_dim}; action_dim: {action_dim}")
         self.setup_critic()
 
     def setup_critic(self):
@@ -156,11 +162,12 @@ class Critic:
             for _ in range(5)
         ]'''
         self.network = NeuralNetwork(
-                input_dim=self.state_dim,
-                output_dim=self.action_dim,
+                input_dim=self.state_dim+self.action_dim,
+                output_dim=1, # Reward is probably 1-d
                 hidden_layers=self.hidden_layers,
                 hidden_size=self.hidden_size,
                 activation="")
+        self.optimizer = optim.AdamW(self.network.parameters(), lr = self.critic_lr)
 
 class TrainableParameter:
     '''
@@ -223,9 +230,12 @@ class Agent:
             #C: self.run_gradient_update_step(self.actor.get_action_and_log_prob(s,True), loss= ...) 
             #L: give range of options, get rewards from critic -> pick best one in train
             with torch.inference_mode():
-                options = np.linspace(-1,1, 100)
+                options = np.expand_dims(np.linspace(-1,1, 100, dtype=np.float32), -1)
+                #print(f"tp dim: {np.transpose(options).shape}")
                 options = torch.tensor(options)
-                scores = self.critic.network(options)
+                states_holder = torch.ones((100, 1)) * s
+                state_actions = torch.hstack((states_holder, options))
+                scores = self.critic.network(state_actions)
                 opt_idx = np.argmax(scores)
                 action = options[opt_idx]
         else: 
@@ -234,7 +244,7 @@ class Agent:
                 # ATTENTION: the following code is at this moment this NOT correct!
                 action, log_prob = self.actor.get_action_and_log_prob(s, True)
                 action = torch.clamp(action, -1,1)       #may be wrong, try to bound 
-
+        action = action.numpy()
         assert action.shape == (1,), 'Incorrect action shape.'
         assert isinstance(action, np.ndarray ), 'Action dtype must be np.ndarray' 
         return action
@@ -280,13 +290,15 @@ class Agent:
         # Batch sampling
         batch = self.memory.sample(self.batch_size)
         s_batch, a_batch, r_batch, s_prime_batch = batch
-
+        loss = torch.nn.MSELoss()
         # TODO: Implement Critic(s) update here.
         action_prediction = self.actor.network(s_batch)
-        self.run_gradient_update_step(self.actor.network, torch.nn.MSELoss(action_prediction, s_prime_batch))   #maybe implement the policy gradient 
+        self.run_gradient_update_step(self.actor, loss(action_prediction, s_prime_batch))   #maybe implement the policy gradient 
         # TODO: Implement Policy update here
-        critical_prediction = self.critic.network(torch.cat(s_batch, a_batch))
-        self.run_gradient_update_step(self.critic.network, torch.nn.MSELoss(critical_prediction, r_batch))
+        state_action = torch.hstack((s_batch, a_batch))
+        #print(state_action.shape)
+        critical_prediction = self.critic.network(state_action)
+        self.run_gradient_update_step(self.critic, loss(critical_prediction, r_batch))
         
 
 

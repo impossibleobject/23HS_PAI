@@ -12,6 +12,7 @@ pyarmor = "==6.7.4"
 cryptography = "==3.0"
 torch = "*"
 tqdm = "*"
+gym = {extras = ["classic_control"], version = "==0.26.2"}
 
 [dev-packages]
 
