@@ -70,12 +70,14 @@ class Actor:
         '''
         # TODO: Implement this function which sets up the actor network. 
         # Take a look at the NeuralNetwork class in utils.py. 
-        self.network = NeuralNetwork(
+        self.network = torch.nn.Sequential(NeuralNetwork(
             input_dim=self.state_dim,
             output_dim=self.action_dim,
             hidden_size=self.hidden_size,
             hidden_layers=self.hidden_layers,
-            activation="")                      #currently just ReLu need to specify this later
+            activation=""),                      #currently just ReLu need to specify this later
+            torch.nn.Tanh(), # The Tanh is to make the network only output in -1;1
+        )
         self.optimizer = optim.AdamW(self.network.parameters(), lr = self.actor_lr)
 
     def clamp_log_std(self, log_std: torch.Tensor) -> torch.Tensor:
@@ -226,30 +228,13 @@ class Agent:
         #Chris: need to specify an optimizer within critic_target_update_step
         
         if train: 
-            #C: train network, very rudimentary and not complete what I did
-            #C: self.run_gradient_update_step(self.actor.get_action_and_log_prob(s,True), loss= ...) 
-            #L: give range of options, get rewards from critic -> pick best one in train
             with torch.inference_mode():
-                '''options = np.linspace(-1,1, 100, dtype=np.float32)
-                action = np.array([np.random.choice(options)], dtype=np.float32)
-                '''
-                #options = np.expand_dims(options, -1)
-                #print(f"tp dim: {np.transpose(options).shape}")
-
-                '''                options = torch.tensor(options)
-                states_holder = torch.ones((100, 1)) * s
-                state_actions = torch.hstack((states_holder, options))
-                scores = self.critic.network(state_actions)
-                opt_idx = np.argmax(scores)
-                action = options[opt_idx]
-                #print(action)'''
                 action, _ = self.actor.get_action_and_log_prob(s, True)
         else: 
             #S: evaluation mode, just forward pass -> actor picks directly
             with torch.inference_mode():
                 # ATTENTION: the following code is at this moment this NOT correct!
                 action, log_prob = self.actor.get_action_and_log_prob(s, True)
-                action = torch.clamp(action, -1,1)       #may be wrong, try to bound 
         action = action.numpy()
         assert action.shape == (1,), 'Incorrect action shape.'
         assert isinstance(action, np.ndarray ), 'Action dtype must be np.ndarray' 
@@ -305,6 +290,7 @@ class Agent:
         action_prediction = self.actor.network(s_batch)
         self.run_gradient_update_step(self.actor, loss(action_prediction, a_batch))   #maybe implement the policy gradient 
         # TODO: Implement Policy update here
+        # Simon: I think this part is correct, or at least good enough.
         state_action = torch.hstack((s_batch, a_batch))
         #print(state_action.shape)
         critical_prediction = self.critic.network(state_action)
