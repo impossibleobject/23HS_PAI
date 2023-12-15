@@ -79,6 +79,7 @@ class Actor:
             torch.nn.Tanh(), # The Tanh is to make the network only output in -1;1
         )
         self.optimizer = optim.AdamW(self.network.parameters(), lr = self.actor_lr)
+        #print(f"actor act dim: {self.action_dim}")
 
     def clamp_log_std(self, log_std: torch.Tensor) -> torch.Tensor:
         '''
@@ -99,36 +100,40 @@ class Actor:
         :param log_prob: log_probability of the the action.
         '''
         assert state.shape == (3,) or state.shape[1] == self.state_dim, 'State passed to this method has a wrong shape'
+        # Simon: I think state.shap[0] might be the batch dim.
         action , log_prob = torch.zeros(state.shape[0]), torch.ones(state.shape[0])
         # TODO: Implement this function which returns an action and its log probability.
         # If working with stochastic policies, make sure that its log_std are clamped 
         # using the clamp_log_std function.
-        
-        actions = self.network.forward(state)                                     #getting possible actions from out network 
-        probabilities= torch.nn.functional.softmax(actions)                     #converting resulting actions to probabilities using softmax
-        
+        actions=[]
+        for i in range(5):
+            action = self.network.forward(state)                                     #getting possible actions from out network 
+            actions.append(action)
+
         if deterministic:
-           log_probabilities= torch.log(probabilities)
-           idx = torch.argmax(log_probabilities)                                #taking the max arg of our log probabilities
-           action, log_prob= actions[idx], log_probabilities[idx]               #returning our max log probabilities and best action
-           
+           log_probabilities= torch.zeros(state.shape[0])                       #torch.log(probabilities) old one
+           #idx = torch.argmax(log_probabilities)                                #taking the max arg of our log probabilities
+           #action, log_prob= actions[idx], log_probabilities[idx]               #returning our max log probabilities and best action
+           action= torch.mean(torch.tensor(actions))
         else:
             #quite unsure with the results here, do not know why we need stdv yet 
             #currently implemented code for discrete action space 
             #if we want continous action spaces may need to change network structure
-            
+
            mean_action= torch.mean(actions)
            log_std_unclamped = torch.log(torch.std(actions))
 
            log_std_action = self.clamp_log_std(log_std=log_std_unclamped)
            std_action = torch.exp(log_std_action)           
-           
+
            dist = torch.distributions.normal.Normal(mean_action, std_action)              
            action = dist.sample()                                                #sample an action
-           log_prob = dist.log_prob(action)                                      #get log prob of that (sampled) action
+           log_prob = dist.log_prob(action)
+           print(f"log prob from dist {log_prob.shape}")                                      #get log prob of that (sampled) action
            #action = torch.multinomial(probabilities, num_samples=1).item()      #sampled an action
            #how to get the probability of sampled action?           
-        
+        print(f"action shape: {action.shape}; log_prob shape: {log_prob.shape}")
+
         assert action.shape == (state.shape[0], self.action_dim) and \
             log_prob.shape == (state.shape[0], self.action_dim), 'Incorrect shape for action or log_prob.'
         return action, log_prob
@@ -235,6 +240,7 @@ class Agent:
             with torch.inference_mode():
                 # ATTENTION: the following code is at this moment this NOT correct!
                 action, log_prob = self.actor.get_action_and_log_prob(s, True)
+                print(f"log prob from get action {log_prob.shape}")    
         action = action.numpy()
         assert action.shape == (1,), 'Incorrect action shape.'
         assert isinstance(action, np.ndarray ), 'Action dtype must be np.ndarray' 
@@ -281,18 +287,28 @@ class Agent:
         # Batch sampling
         batch = self.memory.sample(self.batch_size)
         s_batch, a_batch, r_batch, s_prime_batch = batch
-        loss = torch.nn.MSELoss()
+
+        #
+        action_prediction, log_prob = self.actor.get_action_and_log_prob(s_batch, True)
+        print(f"log prob from actor network {log_prob.shape}")
+        #replay buffer tuple: (s_lst, a_lst, r_lst, s_prime_lst)             #save our quadruples
+        policy_gradient = -log_prob* r_batch
+
+        self.run_gradient_update_step(self.actor, policy_gradient)
+
+
         # TODO: Implement Critic(s) update here.
-        # TODO SIMON: There is a conceputal error here. I do not know exactly. 
+        # TODO SIMON: There is a conceptual error here. I do not know exactly. 
         # what actor is supposed to predict. Either it is the next state from 
         # the current state + action or it is the next action from the current 
         # state. Idk what we need s_prime for.
-        action_prediction = self.actor.network(s_batch)
-        self.run_gradient_update_step(self.actor, loss(action_prediction, a_batch))   #maybe implement the policy gradient 
+        # action_prediction = self.actor.network(s_batch)
+        # self.run_gradient_update_step(self.critic, loss(action_prediction, a_batch))   #maybe implement the policy gradient 
         # TODO: Implement Policy update here
         # Simon: I think this part is correct, or at least good enough.
-        state_action = torch.hstack((s_batch, a_batch))
+        loss = torch.nn.MSELoss()
         #print(state_action.shape)
+        state_action = torch.hstack((s_batch, a_batch))
         critical_prediction = self.critic.network(state_action)
         self.run_gradient_update_step(self.critic, loss(critical_prediction, r_batch))
         
