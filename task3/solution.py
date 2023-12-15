@@ -99,9 +99,9 @@ class BO_algo():
         recommendation = x_opt
         # Make a random guess if we propose smth. that we already had.
         count = 0
-        while recommendation in self.xs[:, 0] and count < 100 or (v_pred > 4 and count < 1) or (v_std > 0.15 and count<1):
+        while (np.any(np.abs(recommendation - self.xs[:, 0]) < 0.001) and count < 100) or (v_pred > 4 and count < 1) or (v_std > 0.11 and count<1):
             safe_point = self.xs[0, 0]
-            interval = 0.75 * OFFSET if count < 10 else 0.3
+            interval = 0.80 * OFFSET if count < 10 else 0.3
             lower_bound = np.maximum(safe_point - interval, 0)
             upper_bound = np.minimum(safe_point + interval, 10)
             safer_domain = np.linspace(lower_bound, upper_bound, num=100)
