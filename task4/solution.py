@@ -114,13 +114,17 @@ class Actor:
            log_probabilities= torch.zeros(state.shape[0])                       #torch.log(probabilities) old one
            #idx = torch.argmax(log_probabilities)                                #taking the max arg of our log probabilities
            #action, log_prob= actions[idx], log_probabilities[idx]               #returning our max log probabilities and best action
+           print(actions)
            action= torch.mean(torch.tensor(actions))
+           print(f"action shape {action.shape}")
         else:
             #quite unsure with the results here, do not know why we need stdv yet 
             #currently implemented code for discrete action space 
             #if we want continous action spaces may need to change network structure
 
            mean_action= torch.mean(actions)
+           print(f"mean action shape {mean_action.shape}")
+           print(f"std action shape {std_action.shape}")
            log_std_unclamped = torch.log(torch.std(actions))
 
            log_std_action = self.clamp_log_std(log_std=log_std_unclamped)
