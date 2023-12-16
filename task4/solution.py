@@ -84,8 +84,8 @@ class Actor:
             hidden_size=self.hidden_size,
             hidden_layers=self.hidden_layers,
             activation=""),                      #currently just ReLu need to specify this later
-            torch.nn.Softmax(),
-        )
+            torch.nn.ReLU(), # S: so no values < 0
+        ).to(self.device)
         self.optimizer = optim.AdamW(self.network.parameters(), lr = self.actor_lr)
         #print(f"actor act dim: {self.action_dim}")
         #----------------------------------------------------------------------
@@ -118,32 +118,48 @@ class Actor:
         # S: define action space
         
         def get_action_logprob(state, deterministic, RESOLUTION = 100):
-            action_space = torch.unsqueeze(torch.linspace(start=-1, end=1, steps=RESOLUTION), dim=0)
-
-            action_reps = state.repeat(RESOLUTION, 1)
-            state_action = torch.hstack([action_space.T, action_reps])
+            action_space = torch.unsqueeze(torch.linspace(start=-1, end=1, steps=RESOLUTION), dim=0).to(self.device)
+            #print(f"state shape {state.shape}")
+            state_reps = state.repeat(RESOLUTION, 1).to(self.device)
+            state_action = torch.hstack([action_space.T, state_reps])
+            
             #print(f"action space transposed {action_space_T.shape} ")
-            probs = self.network(state_action)
+            with torch.inference_mode():
+                probs = self.network(state_action)
+                probs = torch.nn.functional.softmax(probs)
+            #print(probs)
             action_mean = torch.sum(probs * action_space)
-            action_std = torch.sqrt(torch.square(action_space - action_mean) * probs)
-
+            action_std = torch.sqrt(torch.sum(torch.pow(action_space - action_mean, 2) * probs))
+            #print(f"action mean and std shape: {action_mean.shape} {action_std.shape}")
+            #print(f"action mean and std: {action_mean} {action_std}")
             if deterministic:
                 action = action_mean
                 log_prob = 0
             else:
+                #L: don't get why provided function clamps log, adapted to regular std now
+                #solution for now: clamp output action directly
+                #action_std_clamped = torch.clamp(action_std, np.exp(self.LOG_STD_MIN), np.exp(self.LOG_STD_MAX))
                 dist = torch.distributions.normal.Normal(action_mean, action_std)
-                action = dist.sample((1,))
+                action = dist.sample()
                 log_prob = dist.log_prob(action)
-            return action, log_prob
+            action_clamped = torch.clamp(action, -1., 1.)
+            #print(f"action and logprob shape: {action.shape} {log_prob.shape}")
+            return action_clamped, log_prob
 
         
         if state.shape == (3,): #L: single state passed
             action, log_prob = get_action_logprob(state, deterministic)
+            action = torch.tensor([action])
+            log_prob = torch.tensor([log_prob])
         else:
+            #L: replace zip and listcomp with torch.vmap and lambda
+            #action_logprob_map = lambda s : get_action_logprob(s,deterministic)
+
             action, log_prob = zip(*[get_action_logprob(s, deterministic) for s in state])
-            action = torch.vstack(list(action))
-            log_prob = torch.vstack(list(log_prob))
-        print(action.shape, log_prob.shape)
+            action = torch.vstack(action)
+            log_prob = torch.vstack(log_prob)
+        #print(action, log_prob)
+        #print(action.shape, log_prob.shape)
         #----------------------------------------------------------------------
         assert (action.shape == (self.action_dim,) and \
                 log_prob.shape == (self.action_dim,)) or (action.shape == (state.shape[0], 1) and \
@@ -168,6 +184,7 @@ class Critic:
         # TODO: Implement this function which sets up the critic(s). Take a look at the NeuralNetwork 
         # class in utils.py. Note that you can have MULTIPLE critic networks in this class.
         #----------------------------------------------------------------------
+        #L: todo later: several critics
         # Create self.networks many networks.
         # The range(5) is completely arbitrary. Changing it should change 
         #  predictive performace and computational load.
@@ -185,7 +202,7 @@ class Critic:
                 output_dim=1, # Reward is probably 1-d
                 hidden_layers=self.hidden_layers,
                 hidden_size=self.hidden_size,
-                activation="")
+                activation="").to(self.device)
         self.optimizer = optim.AdamW(self.network.parameters(), lr = self.critic_lr)
         #----------------------------------------------------------------------
 
@@ -227,7 +244,7 @@ class Agent:
         # TODO: Setup off-policy agent with policy and critic classes. 
         # Feel free to instantiate any other parameters you feel you might need.   
         #----------------------------------------------------------------------
-        init_tuple = (100, 10, 1, self.state_dim, self.action_dim, self.device)
+        init_tuple = (256, 2, 1, self.state_dim, self.action_dim, self.device)
         self.actor = Actor(*init_tuple)
         self.critic = Critic(*init_tuple)
         #----------------------------------------------------------------------
@@ -240,9 +257,14 @@ class Agent:
         :return: np.ndarray,, action to apply on the environment, shape (1,)
         """
         # TODO: Implement a function that returns an action from the policy for the state s.
+        action = np.random.uniform(-1, 1, (1,)) #L: assumed placeholder
         #----------------------------------------------------------------------
-        action = np.random.uniform(-1, 1, (1,))
-
+        deterministic = not train #L: for now this, might change
+        #print(f"state shape {s.shape}")
+        with torch.inference_mode():
+            action, _ = self.actor.get_action_and_log_prob(torch.tensor(s), deterministic)
+        action = action.numpy()
+        
 
         #----------------------------------------------------------------------
         assert action.shape == (1,), 'Incorrect action shape.'
@@ -297,26 +319,30 @@ class Agent:
         # TODO: Implement Critic(s) update here.
         #----------------------------------------------------------------------
         # S: sample next actions
-        prime_actions, prime_log_probs = self.actor.get_action_and_log_prob(s_prime_batch, False)
         GAMMA = 0.5 #S: discount factor
-        # S: Assemble past state-action pairs
-        state_actions = torch.hstack((a_batch, s_batch))
-        # S: Assemble next state-action pairs
-        prime_state_actions = torch.hstack((prime_actions, s_prime_batch))
-        # S: compute delta factor (to make the formula less full)
-        reward_predictions = self.critic.network(state_actions)
-        delta = r_batch + GAMMA * self.critic.network(prime_state_actions) - reward_predictions
 
+        with torch.no_grad():
+            prime_actions, prime_log_probs = self.actor.get_action_and_log_prob(s_prime_batch, False)
+            # S: Assemble past state-action pairs
+            state_actions = torch.hstack((a_batch, s_batch))
+            # S: Assemble next state-action pairs
+            prime_state_actions = torch.hstack((prime_actions, s_prime_batch))
+            # S: compute delta factor (to make the formula less full)
+            reward_predictions = self.critic.network(state_actions)
+            delta = r_batch + GAMMA * self.critic.network(prime_state_actions) - reward_predictions
         # S: compute loss
-        critic_loss = delta * reward_predictions
+        critic_loss = delta * self.critic.network(state_actions)
         self.run_gradient_update_step(self.critic, critic_loss)
         #----------------------------------------------------------------------
-
+        #print(f"Train, memory size: {self.memory.size()}")
         # TODO: Implement Policy update here
         #----------------------------------------------------------------------
         #POLICY = ACTOR
-        action, log_prob = self.actor.get_action_and_log_prob(s_batch, False)
-        actor_loss = r_batch * log_prob
+        #action, log_prob = self.actor.get_action_and_log_prob(s_batch, False)
+        log_prob = torch.log(self.actor.network(state_actions))
+        #print(state_actions)
+        #exit()
+        actor_loss = reward_predictions * log_prob
         self.run_gradient_update_step(self.actor, actor_loss)
         #----------------------------------------------------------------------
 
