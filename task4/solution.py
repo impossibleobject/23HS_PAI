@@ -24,11 +24,11 @@ class NeuralNetwork(nn.Module):
         # with a variable number of hidden layers and hidden units.
         # Here you should define layers which your network will use.
         #----------------------------------------------------------------------
-        act_fun = {
+        '''act_fun = {
             "ReLU": torch.nn.ReLU,
             "GELU": torch.nn.GELU,
             "": torch.nn.SELU,
-        }[activation]
+        }[activation]'''
         self.forward_pass = nn.Sequential(
             nn.Linear(in_features=input_dim, out_features=hidden_size),
             nn.ReLU(),
@@ -79,12 +79,12 @@ class Actor:
         # Take a look at the NeuralNetwork class in utils.py. 
         #----------------------------------------------------------------------
         self.network = torch.nn.Sequential(NeuralNetwork(
-            input_dim=self.state_dim,
-            output_dim=self.action_dim,
+            input_dim=self.action_dim+self.state_dim,
+            output_dim=1, # S: outputs probability
             hidden_size=self.hidden_size,
             hidden_layers=self.hidden_layers,
             activation=""),                      #currently just ReLu need to specify this later
-            torch.nn.Tanh(), # The Tanh is to make the network only output in -1;1
+            torch.nn.Softmax(),
         )
         self.optimizer = optim.AdamW(self.network.parameters(), lr = self.actor_lr)
         #print(f"actor act dim: {self.action_dim}")
@@ -115,13 +115,39 @@ class Actor:
         # If working with stochastic policies, make sure that its log_std are clamped 
         # using the clamp_log_std function.
         #----------------------------------------------------------------------
+        # S: define action space
+        
+        def get_action_logprob(state, deterministic, RESOLUTION = 100):
+            action_space = torch.unsqueeze(torch.linspace(start=-1, end=1, steps=RESOLUTION), dim=0)
 
+            action_reps = state.repeat(RESOLUTION, 1)
+            state_action = torch.hstack([action_space.T, action_reps])
+            #print(f"action space transposed {action_space_T.shape} ")
+            probs = self.network(state_action)
+            action_mean = torch.sum(probs * action_space)
+            action_std = torch.sqrt(torch.square(action_space - action_mean) * probs)
 
+            if deterministic:
+                action = action_mean
+                log_prob = 0
+            else:
+                dist = torch.distributions.normal.Normal(action_mean, action_std)
+                action = dist.sample((1,))
+                log_prob = dist.log_prob(action)
+            return action, log_prob
 
-
+        
+        if state.shape == (3,): #L: single state passed
+            action, log_prob = get_action_logprob(state, deterministic)
+        else:
+            action, log_prob = zip(*[get_action_logprob(s, deterministic) for s in state])
+            action = torch.vstack(list(action))
+            log_prob = torch.vstack(list(log_prob))
+        print(action.shape, log_prob.shape)
         #----------------------------------------------------------------------
-        assert action.shape == (state.shape[0], self.action_dim) and \
-            log_prob.shape == (state.shape[0], self.action_dim), 'Incorrect shape for action or log_prob.'
+        assert (action.shape == (self.action_dim,) and \
+                log_prob.shape == (self.action_dim,)) or (action.shape == (state.shape[0], 1) and \
+                log_prob.shape == (state.shape[0], 1)), 'Incorrect shape for action and logprob'
         return action, log_prob
 
 
@@ -155,7 +181,7 @@ class Critic:
             for _ in range(5)
         ]'''
         self.network = NeuralNetwork(
-                input_dim=self.state_dim+self.action_dim,
+                input_dim=self.action_dim+self.state_dim,
                 output_dim=1, # Reward is probably 1-d
                 hidden_layers=self.hidden_layers,
                 hidden_size=self.hidden_size,
@@ -201,8 +227,9 @@ class Agent:
         # TODO: Setup off-policy agent with policy and critic classes. 
         # Feel free to instantiate any other parameters you feel you might need.   
         #----------------------------------------------------------------------
-        pass
-
+        init_tuple = (100, 10, 1, self.state_dim, self.action_dim, self.device)
+        self.actor = Actor(*init_tuple)
+        self.critic = Critic(*init_tuple)
         #----------------------------------------------------------------------
 
     def get_action(self, s: np.ndarray, train: bool) -> np.ndarray:
@@ -231,8 +258,8 @@ class Agent:
         :param object: object containing trainable parameters and an optimizer
         '''
         object.optimizer.zero_grad()
-        loss.mean().backward()
-        object.optimizer.step()
+        loss.mean().backward() #L: gradient
+        object.optimizer.step() #L: addition
 
     def critic_target_update(self, base_net: NeuralNetwork, target_net: NeuralNetwork, 
                              tau: float, soft_update: bool):
@@ -269,13 +296,28 @@ class Agent:
 
         # TODO: Implement Critic(s) update here.
         #----------------------------------------------------------------------
+        # S: sample next actions
+        prime_actions, prime_log_probs = self.actor.get_action_and_log_prob(s_prime_batch, False)
+        GAMMA = 0.5 #S: discount factor
+        # S: Assemble past state-action pairs
+        state_actions = torch.hstack((a_batch, s_batch))
+        # S: Assemble next state-action pairs
+        prime_state_actions = torch.hstack((prime_actions, s_prime_batch))
+        # S: compute delta factor (to make the formula less full)
+        reward_predictions = self.critic.network(state_actions)
+        delta = r_batch + GAMMA * self.critic.network(prime_state_actions) - reward_predictions
 
+        # S: compute loss
+        critic_loss = delta * reward_predictions
+        self.run_gradient_update_step(self.critic, critic_loss)
         #----------------------------------------------------------------------
 
         # TODO: Implement Policy update here
         #----------------------------------------------------------------------
-
-
+        #POLICY = ACTOR
+        action, log_prob = self.actor.get_action_and_log_prob(s_batch, False)
+        actor_loss = r_batch * log_prob
+        self.run_gradient_update_step(self.actor, actor_loss)
         #----------------------------------------------------------------------
 
 
