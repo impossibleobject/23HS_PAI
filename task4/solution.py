@@ -138,16 +138,12 @@ class Actor:
         #print(f"action mean and std: {action_mean} {action_std}")
         
         action_dist = Normal(action_mean, action_std)
-        log_prob = action_dist.entropy()
         if deterministic:
             action = action_mean
-            #log_prob = action_dist.log_prob(action)
-
-            #print(action.shape, "action shape determ")
+            log_prob = action_dist.log_prob(action)
         else:
             action = action_dist.sample()
-            #log_prob = action_dist.log_prob(action)
-            #action = torch.clamp(action, -1., 1.)
+            log_prob = action_dist.log_prob(action)
             action = torch.clamp(action, -1,1)#torch.nn.functional.tanh(action)
             #print(action.shape, "action shape stochastic")
         #print(state.shape[0])
@@ -241,7 +237,10 @@ class Agent:
         critic_tuple = (256, 4, 1e-4,self.state_dim, self.action_dim, self.device)
         self.actor = Actor(*init_tuple)
         self.critic = Critic(*critic_tuple)
+        self.critic2 = Critic(*critic_tuple)
         self.critic_target = Critic(*critic_tuple)
+        self.critic_target2 = Critic(*critic_tuple)
+
         #----------------------------------------------------------------------
 
     def get_action(self, s: np.ndarray, train: bool) -> np.ndarray:
@@ -311,7 +310,6 @@ class Agent:
         # Batch sampling
         batch = self.memory.sample(self.batch_size)
         s_batch, a_batch, r_batch, s_prime_batch = batch
-        #print(s_batch.shape , a_batch.shape, "sbatch and abatch shape")
         # TODO: Implement Critic(s) update here.
         #----------------------------------------------------------------------
         # S: sample next action
@@ -322,16 +320,13 @@ class Agent:
             # C: maybe implement epsilon for exploitation exploration in deterministic
             deterministic = True
             
-            #constant= 1            
-            #epsilon= min(1,constant/self.iter)
-            #self.iter= self.iter+1
-            #deterministic=random.choices([False, True], weights=[epsilon, 1-epsilon], k=1)[0]
+            constant= 400            
+            epsilon= min(1,constant/self.iter)
+            self.iter= self.iter+1
+            print(self.iter)
+            deterministic=random.choices([False, True], weights=[epsilon, 1-epsilon], k=1)[0]
 
             s_prime_action, s_prime_entropies = self.actor.get_action_and_log_prob(s_prime_batch, deterministic)
-            #  print(s_prime_action.shape, "sprime shape")
-            #print(a_batch.shape)
-            #L: alternative to get actions from batch instead of terminal, not used anymore
-            #s_prime_action_from_batch = torch.vstack((a_batch[1:], torch.tensor(0.).to(self.device)))
             state_action_prime = torch.hstack((s_prime_action, s_prime_batch))
             #prime_action, prime_entropy = self.actor.get_action_and_log_prob(s_prime_batch)
             # prime_reward = self.critic_target(torch.hstack(prime_action, s_prime_batch))
@@ -359,7 +354,7 @@ class Agent:
         # TODO: Implement Policy update here
         #----------------------------------------------------------------------
         # S: define preliminaries
-        deterministic = False
+        #deterministic = False
         action, entropies = self.actor.get_action_and_log_prob(s_batch, deterministic)
         reward_predictions = self.critic.network(torch.hstack((action, s_batch)))
         #self.critic.optimizer.zero_grad()
