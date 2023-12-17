@@ -86,7 +86,7 @@ class Actor:
             activation=""),                      #currently just ReLu need to specify this later
             torch.nn.ReLU(), # S: so no values < 0
         ).to(self.device)
-        self.optimizer = optim.AdamW(self.network.parameters(), lr = self.actor_lr)
+        self.optimizer = optim.Adam(self.network.parameters(), lr = self.actor_lr)
         #print(f"actor act dim: {self.action_dim}")
         #----------------------------------------------------------------------
 
@@ -203,7 +203,7 @@ class Critic:
                 hidden_layers=self.hidden_layers,
                 hidden_size=self.hidden_size,
                 activation="").to(self.device)
-        self.optimizer = optim.AdamW(self.network.parameters(), lr = self.critic_lr)
+        self.optimizer = optim.Adam(self.network.parameters(), lr = self.critic_lr)
         #----------------------------------------------------------------------
 
 class TrainableParameter:
@@ -244,7 +244,7 @@ class Agent:
         # TODO: Setup off-policy agent with policy and critic classes. 
         # Feel free to instantiate any other parameters you feel you might need.   
         #----------------------------------------------------------------------
-        init_tuple = (256, 2, 1, self.state_dim, self.action_dim, self.device)
+        init_tuple = (256, 2, 3e-4, self.state_dim, self.action_dim, self.device)
         self.actor = Actor(*init_tuple)
         self.critic = Critic(*init_tuple)
         #----------------------------------------------------------------------
