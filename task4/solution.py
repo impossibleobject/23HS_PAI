@@ -317,7 +317,11 @@ class Agent:
         alpha = self.learn_param.get_param()
         alpha_loss = - alpha * sampled_log_prob_detached - alpha * target_entropy
 
-        self.update_step(loss=alpha_loss)
+        #self.update_step(loss=alpha_loss)
+        self.learn_param.optimizer.zero_grad()
+        alpha_loss.mean().backward()
+        self.learn_param.optimizer.step()
+
         self.alpha = self.learn_param.get_param()
 
         self.critic_target_update(self.critic_net1.network, self.targetc_net1.network,self.Tau,True)
