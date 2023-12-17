@@ -11,6 +11,9 @@ from utils import ReplayBuffer, get_env, run_episode
 warnings.filterwarnings("ignore", category=DeprecationWarning)
 warnings.filterwarnings("ignore", category=UserWarning)
 
+
+torch.manual_seed(0)
+
 class NeuralNetwork(nn.Module):
     '''
     This class implements a neural network with a variable number of hidden layers and hidden units.
@@ -39,8 +42,7 @@ class NeuralNetwork(nn.Module):
                     nn.ReLU())
                 for _ in range(hidden_layers)
             ],
-            nn.ReLU(),
-            nn.Linear(in_features=hidden_size, out_features=output_dim)
+            nn.Linear(in_features=hidden_size, out_features=output_dim),
         )
         #----------------------------------------------------------------------
 
@@ -84,7 +86,7 @@ class Actor:
             hidden_size=self.hidden_size,
             hidden_layers=self.hidden_layers,
             activation=""),                      #currently just ReLu need to specify this later
-            torch.nn.ReLU(), # S: so no values < 0
+            torch.nn.Softmax(dim=0), # S: so no values < 0
         ).to(self.device)
         self.optimizer = optim.Adam(self.network.parameters(), lr = self.actor_lr)
         #print(f"actor act dim: {self.action_dim}")
@@ -123,15 +125,17 @@ class Actor:
             state_reps = state.repeat(RESOLUTION, 1).to(self.device)
             state_action = torch.hstack([action_space.T, state_reps])
             
-            #print(f"action space transposed {action_space_T.shape} ")
+            #print(f"input nn: {state_action}")
             with torch.inference_mode():
                 probs = self.network(state_action)
-                probs = torch.nn.functional.softmax(probs)
-            #print(probs)
+                #print(probs.shape)
+                #print(probs)
+                #probs = torch.nn.functional.softmax(torch.flatten(probs))
+                
+                #print("softmax", probs)
+            
             action_mean = torch.sum(probs * action_space)
-            action_std = torch.sqrt(torch.sum(torch.pow(action_space - action_mean, 2) * probs))
-            #print(f"action mean and std shape: {action_mean.shape} {action_std.shape}")
-            #print(f"action mean and std: {action_mean} {action_std}")
+
             if deterministic:
                 action = action_mean
                 log_prob = 0
@@ -139,9 +143,14 @@ class Actor:
                 #L: don't get why provided function clamps log, adapted to regular std now
                 #solution for now: clamp output action directly
                 #action_std_clamped = torch.clamp(action_std, np.exp(self.LOG_STD_MIN), np.exp(self.LOG_STD_MAX))
+                action_std = torch.sqrt(torch.sum(torch.pow(action_space - action_mean, 2) * probs))
+                #action_std_clamped = torch.clamp(action_std, min=0.5, max=0.5)
+                #print(f"action mean and std shape: {action_mean.shape} {action_std.shape}")
+                #print(f"action mean and clamped std: {action_mean} {action_std}")
                 dist = torch.distributions.normal.Normal(action_mean, action_std)
                 action = dist.sample()
                 log_prob = dist.log_prob(action)
+            #print(f"action: {action}")
             action_clamped = torch.clamp(action, -1., 1.)
             #print(f"action and logprob shape: {action.shape} {log_prob.shape}")
             return action_clamped, log_prob
@@ -154,7 +163,7 @@ class Actor:
         else:
             #L: replace zip and listcomp with torch.vmap and lambda
             #action_logprob_map = lambda s : get_action_logprob(s,deterministic)
-
+            #print(f"long batch {state.shape[0]}")
             action, log_prob = zip(*[get_action_logprob(s, deterministic) for s in state])
             action = torch.vstack(action)
             log_prob = torch.vstack(log_prob)
@@ -320,6 +329,7 @@ class Agent:
         #----------------------------------------------------------------------
         # S: sample next actions
         GAMMA = 0.5 #S: discount factor
+        ALPHA = 0.5
 
         with torch.no_grad():
             prime_actions, prime_log_probs = self.actor.get_action_and_log_prob(s_prime_batch, False)
@@ -331,7 +341,13 @@ class Agent:
             reward_predictions = self.critic.network(state_actions)
             delta = r_batch + GAMMA * self.critic.network(prime_state_actions) - reward_predictions
         # S: compute loss
-        critic_loss = delta * self.critic.network(state_actions)
+
+        #----- new critic loss attempt
+        y = r_batch + GAMMA*self.critic.network(prime_state_actions) - ALPHA*0 # 0 is temporary.
+        critic_loss = torch.mean((y-self.critic.network(state_actions))**2)
+        #-----
+        #critic_loss = torch.mean(delta * self.critic.network(state_actions))
+        #print(f"critic loss: {critic_loss}")
         self.run_gradient_update_step(self.critic, critic_loss)
         #----------------------------------------------------------------------
         #print(f"Train, memory size: {self.memory.size()}")
@@ -339,10 +355,14 @@ class Agent:
         #----------------------------------------------------------------------
         #POLICY = ACTOR
         #action, log_prob = self.actor.get_action_and_log_prob(s_batch, False)
-        log_prob = torch.log(self.actor.network(state_actions))
+        act_out = self.actor.network(state_actions)
+        #print(f"action prob: {torch.min(act_out)}, {torch.max(act_out)}")
+        log_prob = torch.log(act_out)
         #print(state_actions)
         #exit()
-        actor_loss = reward_predictions * log_prob
+        #print(f"reward predictions {reward_predictions}, real rewards {r_batch}")
+        actor_loss = torch.mean(-reward_predictions + ALPHA* log_prob)
+        #print(f"actor loss: {actor_loss}")
         self.run_gradient_update_step(self.actor, actor_loss)
         #----------------------------------------------------------------------
 
