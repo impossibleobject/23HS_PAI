@@ -7,12 +7,13 @@ from gym.wrappers.monitoring.video_recorder import VideoRecorder
 import warnings
 from typing import Union
 from utils import ReplayBuffer, get_env, run_episode
+import random
 
 warnings.filterwarnings("ignore", category=DeprecationWarning)
 warnings.filterwarnings("ignore", category=UserWarning)
 
 
-torch.manual_seed(0)
+torch.manual_seed(12344)        #can tweak that
 
 class NeuralNetwork(nn.Module):
     '''
@@ -34,11 +35,13 @@ class NeuralNetwork(nn.Module):
         }[activation]'''
         self.forward_pass = nn.Sequential(
             nn.Linear(in_features=input_dim, out_features=hidden_size),
+            nn.BatchNorm1d(hidden_size),                                   #to avoid vanishing and exploiding gradient problem 
             nn.ReLU(),
             # Make as many Linear + ReLU hidden layers as given as an argument
             *[
                 nn.Sequential(
                     nn.Linear(in_features=hidden_size, out_features=hidden_size),
+                    nn.BatchNorm1d(hidden_size),                           # same reason as above, currently does not work due to batch size 1, ValueError: Expected more than 1 value per channel when training, got input size torch.Size([1, 256])
                     nn.ReLU())
                 for _ in range(hidden_layers)
             ],
@@ -80,13 +83,12 @@ class Actor:
         # TODO: Implement this function which sets up the actor network. 
         # Take a look at the NeuralNetwork class in utils.py. 
         #----------------------------------------------------------------------
-        self.network = torch.nn.Sequential(NeuralNetwork(
+        self.network = NeuralNetwork(
             input_dim=self.state_dim,
             output_dim=self.action_dim*2, # S: outpus mean and std for each prediction
             hidden_size=self.hidden_size,
             hidden_layers=self.hidden_layers,
-            activation=""),                      #currently just ReLu need to specify this later
-        ).to(self.device)
+            activation="").to(self.device)
         self.optimizer = optim.Adam(self.network.parameters(), lr = self.actor_lr)
         #print(f"actor act dim: {self.action_dim}")
         #----------------------------------------------------------------------
@@ -99,9 +101,7 @@ class Actor:
         :param log_std: torch.Tensor, log_std of the policy clamped between LOG_STD_MIN and LOG_STD_MAX.
         '''
         return torch.clamp(log_std, self.LOG_STD_MIN, self.LOG_STD_MAX)
-
-    def normal_entropy(self, std):
-        return 0.5*torch.log(2*torch.pi * torch.e * std**2)
+    
     def get_action_and_log_prob(self, state: torch.Tensor, 
                                 deterministic: bool) -> (torch.Tensor, torch.Tensor):
         '''
@@ -127,24 +127,29 @@ class Actor:
         if len(network_output.shape) == 1:
             network_output = torch.unsqueeze(network_output, dim=0)
         
-        action_mean = torch.nn.functional.tanh(network_output[:, :self.action_dim])
-        action_std = torch.nn.functional.sigmoid(network_output[:, self.action_dim:])+1e-9   #maybe check this again
+        action_mean = torch.nn.functional.tanh(1e-1*network_output[:, :self.action_dim]) #torch.clamp(network_output[:, :self.action_dim], -1, 1)
+        action_std = torch.exp(self.clamp_log_std(network_output[:, self.action_dim:]))
         #action_std_clamped = torch.nn.functional.sigmoid(action_std)
         #action_std_clamped = torch.exp(self.clamp_log_std(torch.log(action_std)))
         if torch.any(torch.isnan(action_mean)) or torch.any(torch.isnan(action_std)):
             print(f"network input {state}")
             print(f"network output {network_output}")
             print(f"action mean and clamped std: {action_mean} {action_std}")
+        #print(f"action mean and std: {action_mean} {action_std}")
         
+        action_dist = Normal(action_mean, action_std)
+        log_prob = action_dist.entropy()
         if deterministic:
-            entropies = self.normal_entropy(action_std)
-            action, log_prob = action_mean, entropies
+            action = action_mean
+            #log_prob = action_dist.log_prob(action)
+
+            #print(action.shape, "action shape determ")
         else:
-            action_dist = Normal(action_mean, action_std)
-            entropies = action_dist.entropy()
-            action, log_prob = action_dist.sample(), entropies
+            action = action_dist.sample()
+            #log_prob = action_dist.log_prob(action)
             #action = torch.clamp(action, -1., 1.)
-            action = torch.nn.functional.tanh(action)
+            action = torch.clamp(action, -1,1)#torch.nn.functional.tanh(action)
+            #print(action.shape, "action shape stochastic")
         #print(state.shape[0])
         #print(action.shape, log_prob.shape)
         #----------------------------------------------------------------------
@@ -224,16 +229,19 @@ class Agent:
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         print("Using device: {}".format(self.device))
         self.memory = ReplayBuffer(self.min_buffer_size, self.max_buffer_size, self.device)
-        self.alpha = TrainableParameter(1e2, 3e-8, True, device=self.device)
+        self.alpha = TrainableParameter(1e1, 3e-8, train_param=True, device=self.device)
+        self.iter=1
         self.setup_agent()
 
     def setup_agent(self):
         # TODO: Setup off-policy agent with policy and critic classes. 
-        # Feel free to instantiate any other parameters you feel you might need.   
+        # Feel free to instantiate any other parameters you feel you might need.
         #----------------------------------------------------------------------
-        init_tuple = (256, 4, 3e-3, self.state_dim, self.action_dim, self.device)
+        init_tuple = (256, 8, 1e-6, self.state_dim, self.action_dim, self.device)
+        critic_tuple = (256, 4, 1e-4,self.state_dim, self.action_dim, self.device)
         self.actor = Actor(*init_tuple)
-        self.critic = Critic(*init_tuple)
+        self.critic = Critic(*critic_tuple)
+        self.critic_target = Critic(*critic_tuple)
         #----------------------------------------------------------------------
 
     def get_action(self, s: np.ndarray, train: bool) -> np.ndarray:
@@ -244,14 +252,15 @@ class Agent:
         :return: np.ndarray,, action to apply on the environment, shape (1,)
         """
         # TODO: Implement a function that returns an action from the policy for the state s.
-        action = np.random.uniform(-1, 1, (1,)) #L: assumed placeholder
+        #action = np.random.uniform(-1, 1, (1,)) #L: assumed placeholder
         #----------------------------------------------------------------------
         deterministic = not train #L: for now this, might change
         #print(f"state shape {s.shape}")
         with torch.inference_mode():
+            self.actor.network.eval()
             action, _ = self.actor.get_action_and_log_prob(torch.tensor(s), deterministic)
         action = action.cpu().numpy()[0]
-
+        #print(f"get_action: current state: {s}; our action: {action}")
         #----------------------------------------------------------------------
         assert action.shape == (1,), 'Incorrect action shape.'
         assert isinstance(action, np.ndarray ), 'Action dtype must be np.ndarray' 
@@ -296,45 +305,81 @@ class Agent:
         # Example: self.run_gradient_update_step(self.policy, policy_loss)
         #----------------------------------------------------------------------
         #not sure whether anything is needed here
+        #print("grad policy net start train_agent", self.actor.network.forward_pass[0].weight.grad)
         #----------------------------------------------------------------------
 
         # Batch sampling
         batch = self.memory.sample(self.batch_size)
         s_batch, a_batch, r_batch, s_prime_batch = batch
-
+        #print(s_batch.shape , a_batch.shape, "sbatch and abatch shape")
         # TODO: Implement Critic(s) update here.
         #----------------------------------------------------------------------
         # S: sample next action
-        GAMMA = 0.5 #S: discount factor
+        GAMMA = 0.5 #S: discount factor -> C: trainable parameter as well, maybe optimize as well
         #S: define critic loss
         with torch.no_grad():
             state_action = torch.hstack((a_batch, s_batch))
             # C: maybe implement epsilon for exploitation exploration in deterministic
-            s_prime_action, s_prime_entropies = self.actor.get_action_and_log_prob(s_prime_batch, deterministic=False)
-            y = r_batch + GAMMA * s_prime_action - self.alpha.get_param() * s_prime_entropies
-            reward_predictions = self.critic.network(state_action)
+            deterministic = True
             
-        critic_loss = 0.5*torch.mean(torch.pow(y - self.critic.network(state_action),2))
+            #constant= 1            
+            #epsilon= min(1,constant/self.iter)
+            #self.iter= self.iter+1
+            #deterministic=random.choices([False, True], weights=[epsilon, 1-epsilon], k=1)[0]
+
+            s_prime_action, s_prime_entropies = self.actor.get_action_and_log_prob(s_prime_batch, deterministic)
+            #  print(s_prime_action.shape, "sprime shape")
+            #print(a_batch.shape)
+            #L: alternative to get actions from batch instead of terminal, not used anymore
+            #s_prime_action_from_batch = torch.vstack((a_batch[1:], torch.tensor(0.).to(self.device)))
+            state_action_prime = torch.hstack((s_prime_action, s_prime_batch))
+            #prime_action, prime_entropy = self.actor.get_action_and_log_prob(s_prime_batch)
+            # prime_reward = self.critic_target(torch.hstack(prime_action, s_prime_batch))
+            s_prime_reward_critic = self.critic_target.network(state_action_prime)
+            
+            y = r_batch + GAMMA * s_prime_reward_critic - self.alpha.get_param().detach() * s_prime_entropies
+            reward_predictions = self.critic.network(state_action)
+        
+        do_a_pred_comp = False
+        if do_a_pred_comp:
+            next_a_pred_real = list(zip(s_prime_action[:-1], a_batch[1:]))
+            next_a_pred_real = [(np.round(a.item(),2), np.round(b.item(),2)) for a,b in next_a_pred_real] 
+            print(f"pred next, real actions: {next_a_pred_real}")
+        # Implement Critc Update
+        critic_loss = torch.mean(
+            torch.pow(
+                y - self.critic.network(state_action),
+                2,
+            )
+        )
+        #print(f"critic loss: {critic_loss}")
+        # critic_loss = torch.nn.functional.mse_loss(self.critic.network(state_action), r_batch + prime_reward)
         self.run_gradient_update_step(self.critic, critic_loss)
         #----------------------------------------------------------------------
         # TODO: Implement Policy update here
         #----------------------------------------------------------------------
         # S: define preliminaries
-        action, entropies = self.actor.get_action_and_log_prob(s_batch, deterministic=False)
+        deterministic = False
+        action, entropies = self.actor.get_action_and_log_prob(s_batch, deterministic)
         reward_predictions = self.critic.network(torch.hstack((action, s_batch)))
-        self.critic.optimizer.zero_grad()
+        #self.critic.optimizer.zero_grad()
         #policy gradient
-        actor_loss = torch.mean(-reward_predictions + self.alpha.get_param().detach() * entropies)
+        actor_loss = -torch.mean(self.alpha.get_param().detach() * entropies - reward_predictions)
+        
         self.run_gradient_update_step(self.actor, actor_loss)
         #----------------------------------------------------------------------
 
         #L: update alpha:
         #----------------------------------------------------------------------
-        target_entropy = 5
-        alpha_loss = -self.alpha.get_param() * torch.mean(entropies.detach()+target_entropy)
+        target_entropy = 1
+        alpha_loss = -self.alpha.get_param() * torch.mean(entropies.detach() + target_entropy)
+        
         self.run_gradient_update_step(self.alpha, alpha_loss)
+        # S: target critic update
+        self.critic_target_update(self.critic.network, self.critic_target.network, 0.2, True)
         #----------------------------------------------------------------------
-
+        #print(f"critic: {np.round(critic_loss.item(),4)}, actor: {np.round(actor_loss.item(),4)}, alpha: {np.round(alpha_loss.item(),4)}")
+        #print("grad policy net end  train_agent", self.actor.network.forward_pass[0].weight.grad)
 
 # This main function is provided here to enable some basic testing. 
 # ANY changes here WON'T take any effect while grading.
