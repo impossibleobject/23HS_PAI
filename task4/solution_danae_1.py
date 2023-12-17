@@ -7,8 +7,11 @@ from gym.wrappers.monitoring.video_recorder import VideoRecorder
 import warnings
 from typing import Union
 from utils import ReplayBuffer, get_env, run_episode
+from scipy.stats import norm
+import copy
+import random
 
-torch.manual_seed(420)
+torch.manual_seed(69)
 
 warnings.filterwarnings("ignore", category=DeprecationWarning)
 warnings.filterwarnings("ignore", category=UserWarning)
@@ -32,8 +35,7 @@ class NeuralNetwork(nn.Module):
         self.activations = {
             'relu': nn.ReLU(),
             'sigmoid': nn.Sigmoid(),
-            'tanh': nn.Tanh(),
-            'gelu': nn.GELU()
+            'tanh': nn.Tanh()
             }
         self.activation = self.activations[activation]
         self.input = nn.Linear(self.input_dim, self.hidden_size)
@@ -43,6 +45,7 @@ class NeuralNetwork(nn.Module):
     def forward(self, s: torch.Tensor) -> torch.Tensor:
         # TODO: Implement the forward pass for the neural network you have defined.
         #pass
+        s = s.cuda()
         s = self.input(s)
         s = self.activation(s)
         for i in range(0,self.hidden_layers):
@@ -79,7 +82,7 @@ class Actor:
                                        output_dim=2*self.action_dim,
                                          hidden_size=self.hidden_size, 
                                          hidden_layers=self.hidden_layers,
-                                         activation="gelu")
+                                         activation="relu")
         self.NN_actor.to(self.device)
         self.optimizer= optim.Adam(self.NN_actor.parameters(),lr = self.actor_lr)
         #self.temperature = TrainableParameter(init_param=0.005, lr_param=0.1, train_param=True)
@@ -108,38 +111,140 @@ class Actor:
         # TODO: Implement this function which returns an action and its log probability.
         # If working with stochastic policies, make sure that its log_std are clamped 
         # using the clamp_log_std function.
-        
-        epsilon = 1e-6
-        state = state.to(self.device)
-        output = self.NN_actor(state)
-        N = state.shape[0]
-        
 
-        if state.shape == (3,):
-            mean, log_std = output[0].reshape((self.action_dim,)), output[1].reshape((self.action_dim,) )
-        else:
-            mean, log_std = output[:, 0].reshape((N, self.action_dim)), output[:, 1].reshape((N, self.action_dim))
+
+        ######### OTHER 
+        state = state.to(self.device)
+        epsilon = 1e-6
+        result = self.NN_actor.forward(state)
+        # if state.shape == (3,):
+        #     mean, log_std = result[0].reshape((self.action_dim,)), result[1].reshape((self.action_dim,) )
+        # else:
+        #     mean, log_std = result[:, :self.action_dim], result[:, self.action_dim:]
         
         if deterministic==False:
+
+            if state.shape == (3,):
+                mean, log_std = result[0].reshape((self.action_dim,)), result[1].reshape((self.action_dim,) )
+            else:
+                mean, log_std = result[:, :self.action_dim], result[:, self.action_dim:]
 
             log_std = self.clamp_log_std(log_std)
             dist = torch.distributions.normal.Normal(mean,torch.exp(log_std))
             action = dist.rsample()
             log_prob = dist.log_prob(action)
-
             action = torch.tanh(action)
+
+            #tweak: very interesting for us
             log_prob -= torch.log(1 - action.pow(2) + epsilon)
+            #log_prob = log_prob.sum(-1, keepdim=True)
 
         else:
 
+            if state.shape == (3,):
+                mean, log_std = result[0].reshape((self.action_dim,)), result[1].reshape((self.action_dim,) )
+            else:
+                mean, log_std = result[:, :self.action_dim], result[:, self.action_dim:]
+
             action = torch.tanh(mean) # for clamping
 
-        assert (action.shape == (self.action_dim, ) and \
-            log_prob.shape == (self.action_dim, ), 'Incorrect shape for action or log_prob.' ) or \
-                ( action.shape[1] == self.action_dim and log_prob.shape[1] == self.action_dim )
-    
+        # uncommented the assertion dont worry about it
+        # assert action.shape == (state.shape[0], self.action_dim) and \
+            # log_prob.shape == (state.shape[0], self.action_dim), 'Incorrect shape for action or log_prob.'
         return action, log_prob
         
+
+
+        #########   OLD VERSION    #########
+        
+        # state = torch.tensor(state)
+
+        # mean, std = torch.chunk(self.NN_actor(state), 2, dim=-1)#.to(self.device)
+
+        # std = torch.tensor(std)
+        # mean = torch.tensor(mean)
+        
+        # log_std = self.clamp_log_std(torch.log(std))   #The log of the standard deviation must be clamped not the standard deviation
+        # std = torch.exp(log_std)
+        # dist = torch.distributions.normal.Normal(mean, std)
+
+        # if deterministic == False:  #We aren't sure about the placement of the clamping, as it makes a difference for the probability, what its std is
+        #     action = dist.rsample() #rsample includes the reparametrization trick
+        #     action = torch.tanh(action)
+        # else:
+        #     action = mean
+
+                    
+        # log_prob = dist.log_prob(action)
+            
+        # action = action.reshape((self.action_dim,))
+        # log_prob = torch.tensor(log_prob.reshape((self.action_dim,)))
+
+        # assert action.shape == (self.action_dim, ) and \
+        #     log_prob.shape == (self.action_dim, ), 'Incorrect shape for action or log_prob.'
+        
+        # return action, log_prob
+
+        ############# TEST VERSION #############
+
+        outputs = self.NN_actor(state)
+
+        if state.shape == (3,): # one state
+            outputs = [outputs] # wrap in a list so can be iterated over
+
+        #print("outputs", outputs)
+
+        actions, log_probs = [], []
+
+        for out in outputs:
+
+            mean, log_std = out 
+            log_std = torch.tensor(log_std)
+            mean = torch.tensor(mean)
+
+            log_std = self.clamp_log_std(log_std)
+            std = torch.exp(log_std)
+
+            dist = torch.distributions.normal.Normal(mean, std)
+
+            if deterministic == False:  #We aren't sure about the placement of the clamping, as it makes a difference for the probability, what its std is
+        
+                action = dist.rsample() #rsample includes the reparametrization trick
+                action = torch.tanh(action)
+
+            else:
+                action = mean
+
+            log_prob = dist.log_prob(action)
+            log_prob -= torch.log(1 - action.pow(2) + 1e-6)
+
+            actions.append(action) 
+            log_probs.append(log_prob)
+
+        #print("actions", actions)
+        #print("log_probs", log_probs)
+
+        if state.shape[0] == self.state_dim: # working with a single state
+            
+            actions = torch.tensor(actions).reshape((self.action_dim, ))
+            log_probs = torch.tensor(log_probs).reshape((self.action_dim, ))
+
+        else:  # second dimension is the state shape
+
+            N = state.shape[0]
+            actions = torch.tensor(actions).reshape((N, self.action_dim))
+            log_probs = torch.tensor(log_probs).reshape((N, self.action_dim))
+
+
+        #print("-------after conversion to tensors")
+        #print("actions", actions)
+        #print("log_probs", log_probs)
+
+        assert (actions.shape == (self.action_dim, ) and \
+            log_probs.shape == (self.action_dim, ), 'Incorrect shape for action or log_prob.' ) or \
+                ( actions.shape[1] == self.action_dim and log_probs.shape[1] == self.action_dim )
+             
+        return actions, log_probs
 
 
 class Critic:
@@ -161,7 +266,7 @@ class Critic:
         #pass
         #We set the output to 1, but are not sure if the expected value returns a vector
         #self.NN_critic_lr = self.critic_lr
-        self.NN_critic = NeuralNetwork(input_dim = self.state_dim, output_dim=1, hidden_size=self.hidden_size, hidden_layers=self.hidden_layers, activation="gelu")
+        self.NN_critic = NeuralNetwork(input_dim = self.state_dim, output_dim=1, hidden_size=self.hidden_size, hidden_layers=self.hidden_layers, activation="relu")
         self.NN_critic.to(self.device)
         self.optimizer = optim.Adam(self.NN_critic.parameters(),lr = self.critic_lr)
         #self.temperature = TrainableParameter(init_param=0.005, lr_param=0.1, train_param=True)
@@ -174,7 +279,7 @@ class TrainableParameter:
     useful if you try to implement the entropy temerature parameter for SAC algorithm.
     '''
     def __init__(self, init_param: float, lr_param: float, 
-                 train_param: bool, device: torch.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")):
+                 train_param: bool, device: torch.device = torch.device('cpu')):
         
         self.log_param = torch.tensor(np.log(init_param), requires_grad=train_param, device=device)
         self.optimizer = optim.Adam([self.log_param], lr=lr_param)
@@ -197,7 +302,7 @@ class Agent:
         # If your PC possesses a GPU, you should be able to use it for training, 
         # as self.device should be 'cuda' in that case.
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        #print("Using device: {}".format(self.device))
+        print("Using device: {}".format(self.device))
         self.memory = ReplayBuffer(self.min_buffer_size, self.max_buffer_size, self.device)
         
         self.setup_agent()
@@ -205,9 +310,7 @@ class Agent:
     def setup_agent(self):
         # TODO: Setup off-policy agent with policy and critic classes. 
         # Feel free to instantiate any other parameters you feel you might need.   
-
-        torch.manual_seed(69)
-
+        #pass
         self.hidden_layers = 1
         self.hidden_size = 10
         self.lr = 3E-2
@@ -236,7 +339,7 @@ class Agent:
         
         self.critic_target_update(self.target_critic_Q1.NN_critic, self.critic_Q1.NN_critic, 0., False)
         self.critic_target_update(self.target_critic_Q2.NN_critic, self.critic_Q2.NN_critic, 0., False)
-
+        #tweak: parameters
         self.Tau = 0.005
         self.gamma = 0.99
         self.alpha = 0.05
@@ -250,12 +353,16 @@ class Agent:
         :return: np.ndarray,, action to apply on the environment, shape (1,)
         """
         # TODO: Implement a function that returns an action from the policy for the state s.
+        #action = np.random.uniform(-1, 1, (1,))
         #Convert the state to a torch tensor, which is the required input for the actor
         s = torch.tensor(s)
+        #tweak: no inference_mode() or no_grad used 
         #Import action from the actor and discard the log probability here, possibly used elsewhere
         action, _ = self.actor.get_action_and_log_prob(s, not train)
-        
+        # only get one action -> we have to sample in get_action_and_log_prob
+        #Convert the returned tensor action to an nd.array
         action = action.cpu().clone().detach().numpy()
+        #Need log probability for something -------> ?
 
         assert action.shape == (1,), 'Incorrect action shape.'
         assert isinstance(action, np.ndarray ), 'Action dtype must be np.ndarray' 
@@ -303,24 +410,33 @@ class Agent:
         batch = self.memory.sample(self.batch_size)
         s_batch, a_batch, r_batch, s_prime_batch = batch
 
+        #print("s_batch", s_batch[0:5, :])
 
-        #print("alpha before optimization", self.alpha)
+        print("#############################")
+        print("train_agent")
+        print("#############################")
 
+        #Get the temperature - We still need to figure out which network uses this
+        #alpha = self.temperature.get_param()#.clone().detach()
+        print("alpha before optimization", self.alpha)
+        #alpha = torch.tensor(0.5)
+        reward =  r_batch # smth to investigate
+        print("modified reward", reward[0:5, :])
 
         #Optimize the critic networks
         #Run a gradient update step for critic V
         # TODO: Implement Critic(s) update here.
 
-        #print(" ------- Training Critic networks -------- ")
+        print(" ------- Training Critic networks -------- ")
        
         with torch.no_grad():
 
             next_sampled_action, next_sampled_log_prob = self.actor.get_action_and_log_prob(s_prime_batch, False)
 
-            #print("next_sampled_action",next_sampled_action[0:5,:])
-            #print("next_sampled_log_prob", next_sampled_log_prob[0:5,:])
-            input = torch.cat((s_prime_batch, next_sampled_action), dim = 1).to(self.device)
+            print("next_sampled_action",next_sampled_action[0:5,:])
+            print("next_sampled_log_prob", next_sampled_log_prob[0:5,:])
 
+            input = torch.cat((s_prime_batch.to(self.device), next_sampled_action.to(self.device)), dim = 1).to(self.device)
             #print("input looks like", input[0:5,])
             qf1_next = self.target_critic_Q1.NN_critic(input)   
             qf2_next = self.target_critic_Q2.NN_critic(input)
@@ -329,7 +445,7 @@ class Agent:
             min_qf_next = torch.min(qf1_next,qf2_next) - self.alpha * next_sampled_log_prob
 
             #print("min_qf_next",min_qf_next[0:5,:])
-            next_q_value = r_batch + self.gamma * min_qf_next# 200 x 1
+            next_q_value = reward + self.gamma * min_qf_next# 200 x 1
 
         #print("next_q_value", next_q_value[0:5,:])
 
@@ -340,15 +456,16 @@ class Agent:
         qf2 = self.critic_Q2.NN_critic(input_Q) # 200 x 1
 
         #print("Total number of zero outputs", (qf1 == 0).sum(), "out of", qf1.shape)
+
         q1_loss = nn.functional.mse_loss(qf1, next_q_value)  
         q2_loss = nn.functional.mse_loss(qf2,next_q_value)
 
-        #print("q1 loss", q1_loss)
+        print("q1 loss", q1_loss)
 
         self.run_gradient_update_step(self.critic_Q1, q1_loss)
         self.run_gradient_update_step(self.critic_Q2, q2_loss)
 
-        #print("-------- Training Policy Network ---------- ")
+        print("-------- Training Policy Network ---------- ")
 
         # gradients may not be passed along here
         sampled_action, sampled_log_prob = self.actor.get_action_and_log_prob(s_batch, False)
@@ -359,26 +476,28 @@ class Agent:
         Q2_pi = self.critic_Q2.NN_critic(input_policy) #s_batch,sampled_action)
         min_q_pi = torch.min(Q1_pi, Q2_pi)
 
-        #print("sampled actions are", sampled_action[0:5,:] )
-        #print("sampled log probs are", sampled_log_prob[0:5,:] )
+        print("sampled actions are", sampled_action[0:5,:] )
+        print("sampled log probs are", sampled_log_prob[0:5,:] )
         
         #Policy loss
 
         # TODO: Implement Policy update here
         policy_loss = (self.alpha * (sampled_log_prob) - min_q_pi) # self.alpha * removed
-        #print("policy loss", policy_loss[0:5,])
+        print("policy loss", policy_loss[0:5,])
 
         #Gradient update for policy
         self.run_gradient_update_step(self.actor, policy_loss)
 
-        #print("grad of policy network", self.actor.NN_actor.input.weight.grad)
-        #print("----------Policy weights: ", self.actor.NN_actor.state_dict()['putput.weight'][0,:5])
+        print("grad of policy network", self.actor.NN_actor.input.weight.grad)
+        print("----------Policy weights: ", self.actor.NN_actor.state_dict()['putput.weight'][0,:5])
+
+        # print some gradients
 
         # Temperature (alpha) loss
-        #print("------ Training temperature -------")
+        print("------ Training temperature -------")
 
         H = -1.
-        
+        #alpha = self.temperature.get_param()
         sampled_log_prob_detached = sampled_log_prob.detach().clone()
         alpha = self.temperature.get_param()
         alpha_loss = - alpha * sampled_log_prob_detached - alpha * H
@@ -387,6 +506,12 @@ class Agent:
         alpha_loss.mean().backward()
         self.temperature.optimizer.step()
         
+        #print("targetnet --> Q1 after gradient, before soft update", self.critic_Q1.NN_critic.state_dict()['putput.weight'][0,:5])
+        #Critic target update step
+        #print("basenet1 -->", base_net1.state_dict()['putput.weight'][0,:5])
+
+        #print("Q1 after update", self.critic_Q1.NN_critic.state_dict()['putput.weight'][0,:5])
+
         self.alpha = self.temperature.get_param()
         #print("alpha after optimization", alpha)
 
@@ -419,7 +544,6 @@ if __name__ == '__main__':
         run_episode(env, agent, None, verbose, train=True)
 
     if verbose:
-        
         print('\n')
 
     test_returns = []
