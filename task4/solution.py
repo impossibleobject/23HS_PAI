@@ -77,7 +77,7 @@ class Actor:
                                          hidden_size=self.hidden_size, 
                                          hidden_layers=self.hidden_layers,
                                          activation="")
-        self.network.to(self.device)
+        self.network = self.network.to(self.device)
         self.optimizer = optim.Adam(self.network.parameters(), lr = self.actor_lr)
 
     def clamp_log_std(self, log_std: torch.Tensor) -> torch.Tensor:
@@ -107,27 +107,43 @@ class Actor:
         state = state.to(self.device)
         output = self.network(state)
         N = state.shape[0]
+        epsilon = 1e-6
 
         if state.shape == (3,):
             mean, log_std = output[0].reshape((self.action_dim,)), output[1].reshape((self.action_dim,) )
         else:
             mean, log_std = output[:, 0].reshape((N, self.action_dim)), output[:, 1].reshape((N, self.action_dim))
-        log_std = self.clamp_log_std(log_std)
-        dist = Normal(mean,torch.exp(log_std))
+        
         if deterministic:
             action = torch.tanh(mean)
         else:
+            log_std = self.clamp_log_std(log_std)
+            dist = Normal(mean,torch.exp(log_std))
             #clamp the log_standard_deviation
-            
             action = dist.rsample()
-            action = torch.tanh(action)
             
-        num_stab = 1e-6
-        log_prob = dist.log_prob(action) - torch.log(1 - action.pow(2) + num_stab)
+            num_stab = 1e-6
+            log_prob = dist.log_prob(action)
+            action = torch.tanh(action)
+            log_prob =- torch.log(1 - action.pow(2) + num_stab)
+            
 
-        assert (action.shape == (self.action_dim, ) and \
-            log_prob.shape == (self.action_dim, ), 'Incorrect shape for action or log_prob.' ) or \
-                ( action.shape[1] == self.action_dim and log_prob.shape[1] == self.action_dim )
+
+        # if state.shape == (3,):
+        #     mean, log_std = output[0].reshape((self.action_dim,)), output[1].reshape((self.action_dim,) )
+        # else:
+        #     mean, log_std = output[:, 0].reshape((N, self.action_dim)), output[:, 1].reshape((N, self.action_dim))
+        
+        # if deterministic==False:
+
+        #     log_std = self.clamp_log_std(log_std)
+        #     dist = torch.distributions.normal.Normal(mean,torch.exp(log_std))
+        #     action = dist.rsample()
+        #     log_prob = dist.log_prob(action)
+
+        #     action = torch.tanh(action)
+        #     log_prob -= torch.log(1 - action.pow(2) + epsilon)
+
     
         return action, log_prob
 
@@ -148,7 +164,7 @@ class Critic:
         # TODO: Implement this function which sets up the critic(s). Take a look at the NeuralNetwork 
         # class in utils.py. Note that you can have MULTIPLE critic networks in this class.
         self.network = NeuralNetwork(input_dim = self.state_dim, output_dim=1, hidden_size=self.hidden_size, hidden_layers=self.hidden_layers, activation="")
-        self.network.to(self.device)
+        self.network = self.network.to(self.device)
         #init optimizer with custom critic lr
         self.optimizer = optim.Adam(self.network.parameters(),lr = self.critic_lr)
 
@@ -211,7 +227,7 @@ class Agent:
         self.critic_target_update(self.targetc_net1.network, self.critic_net1.network, 0., False)
         self.critic_target_update(self.targetc_net2.network, self.critic_net2.network, 0., False)
 
-        self.Tau = 0.005
+        self.exp_backoff = 0.005
         self.gamma = 0.99
         self.alpha = 0.05
         self.learn_param = TrainableParameter(init_param=0.05, lr_param=0.01, train_param=True)
@@ -324,8 +340,8 @@ class Agent:
 
         self.alpha = self.learn_param.get_param()
 
-        self.critic_target_update(self.critic_net1.network, self.targetc_net1.network,self.Tau,True)
-        self.critic_target_update(self.critic_net2.network, self.targetc_net2.network, self.Tau,True)
+        self.critic_target_update(self.critic_net1.network, self.targetc_net1.network,self.exp_backoff,True)
+        self.critic_target_update(self.critic_net2.network, self.targetc_net2.network, self.exp_backoff,True)
     
     def update_step(self, loss: torch.Tensor):
         self.learn_param.optimizer.zero_grad()

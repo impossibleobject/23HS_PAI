@@ -36,13 +36,13 @@ class NeuralNetwork(nn.Module):
         self.forward_pass = nn.Sequential(
             nn.Linear(in_features=input_dim, out_features=hidden_size),
             nn.BatchNorm1d(hidden_size),                                   #to avoid vanishing and exploiding gradient problem 
-            nn.ReLU(),
+            nn.GELU(),
             # Make as many Linear + ReLU hidden layers as given as an argument
             *[
                 nn.Sequential(
                     nn.Linear(in_features=hidden_size, out_features=hidden_size),
                     nn.BatchNorm1d(hidden_size),                           # same reason as above, currently does not work due to batch size 1, ValueError: Expected more than 1 value per channel when training, got input size torch.Size([1, 256])
-                    nn.ReLU())
+                    nn.GELU())
                 for _ in range(hidden_layers)
             ],
             nn.Linear(in_features=hidden_size, out_features=output_dim),
@@ -55,8 +55,6 @@ class NeuralNetwork(nn.Module):
     def forward(self, s: torch.Tensor) -> torch.Tensor:
         # TODO: Implement the forward pass for the neural network you have defined.
         #----------------------------------------------------------------------
-        if not isinstance(s, torch.Tensor):
-            s = torch.Tensor(s)
         return self.forward_pass(s)
         #----------------------------------------------------------------------
 
@@ -129,8 +127,10 @@ class Actor:
 
 
 
-        action_mean = torch.nn.functional.tanh(network_output[:, :self.action_dim]) #torch.clamp(network_output[:, :self.action_dim], -1, 1)
-        action_std = torch.exp(self.clamp_log_std(network_output[:, self.action_dim:]))
+        action_mean = network_output[:, 0] #torch.clamp(network_output[:, :self.action_dim], -1, 1)
+        action_log_std = network_output[:, 1]
+        
+        action_std = torch.exp(self.clamp_log_std(action_log_std))
         #debugging:
         if torch.any(torch.isnan(action_mean)) or torch.any(torch.isnan(action_std)):
             print(f"network input {state}")
@@ -138,23 +138,33 @@ class Actor:
             print(f"action mean and clamped std: {action_mean} {action_std}")
         #print(f"action mean and std: {action_mean} {action_std}")
         
+        #print("state shape", state.shape)
         action_dist = Normal(action_mean, action_std)
         if deterministic:
-            action = action_mean
-            log_prob = action_dist.log_prob(action)
-        else:
-            action = action_dist.rsample()
-            log_prob = action_dist.log_prob(action)
-            #tweak: clamp or tanh
-            action = torch.clamp(action, -1,1)    #torch.nn.functional.tanh(action)
+            action_mean_tanh = torch.nn.functional.tanh(action_mean)
+            action = action_mean_tanh
+            #action picked deterministic => prob 1, log_prob 0
+            log_prob = torch.ones((state.shape[0],1))
             
+        else:
+            action_raw = action_dist.rsample()
+            #tweak: clamp or tanh
+            action = torch.tanh(action_raw) #torch.clamp(action, -1,1)]
+            
+            #subtract random jitter from log_prob
+            jitter = torch.log(1 - pow(action,2) + 1e-6)
+            log_prob = action_dist.log_prob(action_raw) - jitter
+                        
             #print(action.shape, "action shape stochastic")
+
+        action = torch.reshape(action, (state.shape[0],1))
+        log_prob = torch.reshape(log_prob, (state.shape[0],1))
         #print(state.shape[0])
         #print(action.shape, log_prob.shape)
         #----------------------------------------------------------------------
-        assert (action.shape == (self.action_dim,) and \
-                log_prob.shape == (self.action_dim,)) or (action.shape == (state.shape[0], 1) and \
-                log_prob.shape == (state.shape[0], 1)), 'Incorrect shape for action and logprob'
+        assert (action.shape  == torch.Size((self.action_dim,)) and \
+                log_prob.shape  == torch.Size((self.action_dim,))) or (action.shape  == torch.Size((state.shape[0], 1)) and \
+                log_prob.shape == torch.Size((state.shape[0], 1))), 'Incorrect shape for action and logprob'
         return action, log_prob
 
 
@@ -234,8 +244,8 @@ class Agent:
         # Feel free to instantiate any other parameters you feel you might need.
         #----------------------------------------------------------------------
         
-        actor_init = (256, 8, 1e-7, self.state_dim, self.action_dim, self.device)   #learning rates
-        critic_init = (256, 4, 1e-5,self.state_dim, self.action_dim, self.device)
+        actor_init = (10, 1, 3e-2, self.state_dim, self.action_dim, self.device)   #learning rates
+        critic_init = (10, 1, 3e-2,self.state_dim, self.action_dim, self.device)
         self.actor = Actor(*actor_init)
         self.critic = Critic(*critic_init)
         
@@ -266,7 +276,6 @@ class Agent:
         #Tweak: changed it to this
         self.actor.network.train()
         #print(f"get_action: current state: {s[0]}; our action: {action}")
-        print(f"get_action: current state: {s[0]}; our action: {action}")
         #----------------------------------------------------------------------
         assert action.shape == (1,), 'Incorrect action shape.'
         assert isinstance(action, np.ndarray ), 'Action dtype must be np.ndarray' 
@@ -311,7 +320,7 @@ class Agent:
         # Example: self.run_gradient_update_step(self.policy, policy_loss)
         #----------------------------------------------------------------------
         #not sure whether anything is needed here
-        #print("grad policy net start train_agent", self.actor.network.forward_pass[0].weight.grad)
+        print("grad policy net start train_agent", self.actor.network.forward_pass[0].weight.grad)
         #----------------------------------------------------------------------
 
         # Batch sampling
@@ -320,7 +329,7 @@ class Agent:
         # TODO: Implement Critic(s) update here.
         #----------------------------------------------------------------------
         # S: sample next action
-        GAMMA = 0.99 #tweak: discount factor -> C: trainable parameter as well, maybe optimize as well
+        GAMMA = 0.5 #tweak: discount factor -> C: trainable parameter as well, maybe optimize as well
         #S: define critic loss
         with torch.no_grad():
             state_action = torch.hstack((a_batch, s_batch))
@@ -387,7 +396,7 @@ class Agent:
         self.critic_target_update(self.critic.network, self.critic_target.network, exp_learning_factor, True)
         #----------------------------------------------------------------------
         #print(f"critic: {np.round(critic_loss.item(),4)}, actor: {np.round(actor_loss.item(),4)}, alpha: {np.round(alpha_loss.item(),4)}")
-        #print("grad policy net end  train_agent", self.actor.network.forward_pass[0].weight.grad)
+        print("grad policy net end  train_agent", self.actor.network.forward_pass[0].weight.grad)
 
 # This main function is provided here to enable some basic testing. 
 # ANY changes here WON'T take any effect while grading.
