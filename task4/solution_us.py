@@ -126,7 +126,6 @@ class Actor:
             network_output = torch.unsqueeze(network_output, dim=0)
 
 
-
         action_mean = network_output[:, 0] #torch.clamp(network_output[:, :self.action_dim], -1, 1)
         action_log_std = network_output[:, 1]
         
@@ -136,7 +135,7 @@ class Actor:
             print(f"network input {state}")
             print(f"network output {network_output}")
             print(f"action mean and clamped std: {action_mean} {action_std}")
-        #print(f"action mean and std: {action_mean} {action_std}")
+        print(f"action mean and std: {action_mean} {action_std}")
         
         #print("state shape", state.shape)
         action_dist = Normal(action_mean, action_std)
@@ -244,8 +243,8 @@ class Agent:
         # Feel free to instantiate any other parameters you feel you might need.
         #----------------------------------------------------------------------
         
-        actor_init = (10, 1, 3e-2, self.state_dim, self.action_dim, self.device)   #learning rates
-        critic_init = (10, 1, 3e-2,self.state_dim, self.action_dim, self.device)
+        actor_init = (256, 8, 1e-9, self.state_dim, self.action_dim, self.device)   #learning rates
+        critic_init = (256, 4, 1e-9,self.state_dim, self.action_dim, self.device)
         self.actor = Actor(*actor_init)
         self.critic = Critic(*critic_init)
         
@@ -370,8 +369,8 @@ class Agent:
         #----------------------------------------------------------------------
         
         #tweak: added this, may be neutral change
-        self.actor.optimizer.zero_grad()
-        self.critic.optimizer.zero_grad()
+        #self.actor.optimizer.zero_grad()
+        #self.critic.optimizer.zero_grad()
         
         action_new, entropies = self.actor.get_action_and_log_prob(s_batch, deterministic)
         s_reward_critic_new = self.critic.network(torch.hstack((action_new, s_batch)))
@@ -380,7 +379,7 @@ class Agent:
         actor_loss = torch.mean(self.alpha.get_param().detach() * entropies - s_reward_critic_new)
         
         self.run_gradient_update_step(self.actor, actor_loss)
-        self.critic.optimizer.zero_grad()
+        #self.critic.optimizer.zero_grad()
 
         #----------------------------------------------------------------------
 
@@ -392,7 +391,7 @@ class Agent:
         
         self.run_gradient_update_step(self.alpha, alpha_loss)
         # S: target critic update
-        exp_learning_factor = 0.05
+        exp_learning_factor = 0.5
         self.critic_target_update(self.critic.network, self.critic_target.network, exp_learning_factor, True)
         #----------------------------------------------------------------------
         #print(f"critic: {np.round(critic_loss.item(),4)}, actor: {np.round(actor_loss.item(),4)}, alpha: {np.round(alpha_loss.item(),4)}")
